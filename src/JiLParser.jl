@@ -309,14 +309,14 @@ jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno, offse
       if debug_lisp_to_julia
         println(julia_form)
       end
-      (julia_form, offset)
+      (Expr(:toplevel, julia_form), offset)
     end
   else
     julia_parser(text, filename, lineno, offset, options)
   end
 
 jil_parse(text::AbstractString, filename::AbstractString, lineno, offset, options) =
-  jil_parse(String(text), filename, lineno, offset, options)
+  jil_parse(String(text), String(filename), lineno, offset, options)
 
 install_jil_parser() = begin
     Core._setparser!(jil_parse)
