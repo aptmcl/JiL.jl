@@ -223,9 +223,7 @@ readNumberOrSymbol(ch, io::JiLIO) =
       end
     end
   end
-        
 
-    
 
 #=
 
@@ -263,17 +261,6 @@ delimiterP(ch, io) =
 
 whitespaceP(ch) =
   ch in " \t\n\r"
-
-#=
-
-    public static void main(String[] outsideArgs)
-        LinjReader r = new LinjReader(new InputStreamReader(System.in), "")
-        while (true)
-            System.out.print("|")
-            System.out.print(r.read(null))
-            System.out.println("|")
-
-=#
 
 restore_julia_parser() = begin
     Core._setparser!(julia_parser)
@@ -322,8 +309,6 @@ install_jil_parser() = begin
     Core._setparser!(jil_parse)
     :jil
 end
-
-install_jil_parser()
 
 #restore_julia_parser()
 
