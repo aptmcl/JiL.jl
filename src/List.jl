@@ -69,17 +69,29 @@ import Base.==
 ==(x::Nil, y::Nil) = true
 ==(x::Cons, y::Cons) = (x.head == y.head) && (x.tail == y.tail)
 
-Base.show(io::IO, lst::Nil) = print(io, "List()")
+print_list_type = false
+
+Base.show(io::IO, lst::Nil) = 
+  print_list_type ? 
+    print(io, "List()") :
+    print(io, "()")
 Base.show(io::IO, lst::Cons{T}) where T =
   begin
-    print(io, "List{$T}(")
-    show(io, head(lst))
+    print_list_type ?
+      print(io, "List{$T}(") :
+      print(io, "(")
+    show_maybe_symbol(io, head(lst))
     for e in tail(lst)
-      print(io, ", ")
-      show(io, e)
+      #print(io, ", ")
+      print(io, " ")
+      show_maybe_symbol(io, e)
     end
     print(io, ")")
   end
+show_maybe_symbol(io, e) =
+  e isa Symbol ? 
+    print(io, e) :
+    show(io, e)
 
 Base.length(l::Nil) = 0
 Base.length(l::Cons) =
