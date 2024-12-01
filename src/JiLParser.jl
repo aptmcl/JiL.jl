@@ -10,12 +10,12 @@ const CLOSE_PARENTHESIS = Symbol(")")
 const END_OF_FILE = Symbol("THIS IS THE END OF FILE")
 
 @kwdef mutable struct JiLIO <: IO
-    io::IO
+    input::String
     shared::Dict=Dict()
     sharedSyntax::Bool=false
     pushedToken=nothing
     pushedChar::Char=NULL_CHAR
-    offset::Int=0
+    offset::Int=1
 end
 
 pushToken(newToken, io::JiLIO) =
@@ -90,12 +90,12 @@ readTail(dotOkP, io::JiLIO) =
     end
   end
 
-Base.eof(io::JiLIO) = eof(io.io)
+Base.eof(io::JiLIO) = io.offset > length(io.input) #eof(io.io)
 
 readChar(io::JiLIO) =
-  eof(io.io) ?
+  eof(io) ?
     EOF_CHAR :
-    let c = Base.read(io.io, Char)
+    let c = io.input[io.offset] #Base.read(io.io, Char)
       io.offset += 1
       c
     end
@@ -122,6 +122,17 @@ readToken(io::JiLIO) =
         readDispatch(io)
       elseif ch == '\''
         list(Symbol("quote"), read(nil, io))
+      elseif ch == '`'
+        list(Symbol("quasiquote"), read(nil, io))
+      elseif ch == ','
+        let nextch = readChar(io)
+          if nextch == '@'
+            list(Symbol("unquote-splicing"), read(nil, io))
+          else
+            pushChar(nextch, io)
+            list(Symbol("unquote"), read(nil, io))
+          end
+        end
       elseif ch == EOF_CHAR
         END_OF_FILE
       else
@@ -217,6 +228,10 @@ readNumberOrSymbol(ch, io::JiLIO) =
               Symbol(token)
             end
           end
+        elseif token == "true"
+          true
+        elseif token == "false"
+          false
         else
           Symbol(token)
         end
@@ -272,8 +287,8 @@ looks_like_lisp(text) =
   startswith(text, r"\(") # this looks like lisp
 
 
-lisp_read(text) =
-  let parser = JiLIO(io=IOBuffer(text))
+lisp_read(text, offset=1) =
+  let parser = JiLIO(input=text, offset=offset)
     try
       let lisp_form = read(nil, parser)
         (lisp_form, parser.offset)
@@ -282,31 +297,106 @@ lisp_read(text) =
       (Expr(:incomplete, "Input error"), parser.offset)
     end
   end
+
+get_parser_for(str) =
+  if str == "jil"
+    jil_parse
+  elseif str == "julia"
+    julia_parser
+  else
+    nothing
+  end
+
 #=
 // Parse `text` starting at 0-based `offset` and attributing the content to
 // `filename`. Return an svec of (parsed_expr, final_offset)
 =#
+lang_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno, offset, options) =
+  let matched = offset == 0 ? match(r"^#lang:(.+?)\r?\n(.+)$"s, text) : nothing
+    isnothing(matched) ?
+      julia_jil_parse(text, filename, lineno, offset, options) :
+      let (lang, text) = matched,
+          parser = get_parser_for(lang)
+        println("Using parser '$parser'")
+        isnothing(parser) ?
+          (Expr(:incomplete, "No parser found for language '$lang'"), offset) :
+          parser(text, filename, lineno, offset, options)
+      end
+  end
+
+jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno, offset, options) =
+  let forms = []
+    offset += 1
+    while offset <= length(text)
+      if isspace(text[offset])
+        offset += 1
+      else
+        let (form, new_offset) = jil_parse_1(text, offset)
+          (push!(forms, form); offset = new_offset + 1)
+        end
+      end
+    end
+    (Expr(:toplevel, forms...), offset)
+  end
 
 debug_lisp_to_julia = false
 
-jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno, offset, options) =
-  if looks_like_lisp(text)
-    let (lisp_form, offset) = lisp_read(text),
-        julia_form = tojulia(lisp_form)
-      if debug_lisp_to_julia
-        println(julia_form)
+jil_parse_1(text, offset) =
+  let (lisp_form, new_offset) = lisp_read(text, offset)
+    lisp_form isa Expr ?
+      (lisp_form, new_offset) :
+      let julia_form = tojulia(lisp_form)
+        debug_lisp_to_julia && println(" => ", julia_form)
+        (julia_form, new_offset)
       end
-      (Expr(:toplevel, julia_form), offset)
-    end
-  else
-    julia_parser(text, filename, lineno, offset, options)
   end
+
+julia_jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno, offset, options) =
+  let forms = []
+    while offset < length(text) && isspace(text[offset + 1])
+      offset += 1
+    end
+    while offset < length(text)
+      if looks_like_lisp(SubString(text, offset + 1))
+        let (ast, new_offset) = jil_parse_1(text, offset + 1)
+          if ast isa Expr && ast.head === :incomplete
+            return (Expr(:incomplete, "Input error"), new_offset)
+          else
+            (push!(forms, ast); offset = new_offset + 1)
+          end
+        end
+        while offset < length(text) && isspace(text[offset + 1])
+          offset += 1
+        end
+      else
+        let next_offset = findnext(r"\r?\n\("s, text, offset + 1),
+            (ast, new_offset) = isnothing(next_offset) ? 
+                                  julia_parser(text, filename, lineno, offset, options) :
+                                  julia_parser(SubString(text, 1, first(next_offset)), filename, lineno, offset, options)
+          if ast isa Expr && ast.head === :toplevel
+            (append!(forms, ast.args); offset = new_offset + 1)
+          elseif ast isa Expr && ast.head === :incomplete
+            return (Expr(:incomplete, "Input error"), new_offset)
+          else
+            error("Unknown parse $ast")
+          end
+        end
+      end
+    end
+    (Expr(:toplevel, forms...), offset)
+  end
+
+lang_parse(text::AbstractString, filename::AbstractString, lineno, offset, options) =
+  lang_parse(String(text), String(filename), lineno, offset, options)
 
 jil_parse(text::AbstractString, filename::AbstractString, lineno, offset, options) =
   jil_parse(String(text), String(filename), lineno, offset, options)
 
+julia_jil_parse(text::AbstractString, filename::AbstractString, lineno, offset, options) =
+  julia_jil_parse(String(text), String(filename), lineno, offset, options)
+
 install_jil_parser() = begin
-    Core._setparser!(jil_parse)
+    Core._setparser!(lang_parse)
     :jil
 end
 
