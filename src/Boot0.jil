@@ -1,0 +1,30 @@
+#lang:jil
+
+;;If you change this file, you need to force recompilation of the JiL package
+
+;;These definitions need to be loaded first
+
+(def define (macro (sig (... body))
+  (list 'def sig (cons 'begin body))))
+
+(define (pair? obj) (isa obj Cons))
+(define null? isempty)
+(define car head)
+(define cdr tail)
+(define (caar c) (car (car c)))
+(define (cadr c) (car (cdr c)))
+(define (cdar c) (cdr (car c)))
+(define (cddr c) (cdr (cdr c)))
+(define (caaar c) (car (car (car c))))
+(define (caadr c) (car (car (cdr c))))
+(define (cadar c) (car (cdr (car c))))
+(define (caddr c) (car (cdr (cdr c))))
+(define (cdaar c) (cdr (car (car c))))
+(define (cdadr c) (cdr (car (cdr c))))
+(define (cddar c) (cdr (cdr (car c))))
+(define (cdddr c) (cdr (cdr (cdr c))))
+(define eq? ===)
+(define not !)
+
+(def defmacro (macro (name params body)
+  (list 'def name (list 'macro params body))))

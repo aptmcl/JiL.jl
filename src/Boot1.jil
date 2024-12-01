@@ -1,0 +1,42 @@
+#lang:jil
+
+;;If you change this file, you need to force recompilation of the JiL package
+
+(defmacro cond ((... clauses))
+  (if (null? clauses)
+    'false
+     (list 'if (if (eq? (caar clauses) 'else) 'true (caar clauses))
+       (cons 'begin (cdar clauses))
+       (cons 'cond (cdr clauses)))))
+
+(def macroexpand (macro (form)
+  (let ((m (JiL.get_binding (head form) JiL.global_scope)))
+    (JiL.jil_macroexpand m (tail form) JiL.global_scope))))
+
+
+(define (expand_quasiquote exp)
+  (define (splicing? form)
+    (and (pair? form)
+         (or (and (pair? (car form))
+                  (eq? (caar form) 'unquote-splicing))
+             (splicing? (cdr form)))))
+  (define (expand-list form)
+    (if (splicing? form)
+        (cons 'append
+              (map (lambda (x)
+                     (if (and (pair? x)
+                              (eq? (car x) 'unquote-splicing))
+                         (cadr x)
+                         (list 'list (expand x))))
+                   form))
+        (cons 'list (map expand form))))
+  (define (expand form)
+    (cond ((not (pair? form))
+           (list 'quote form))
+          ((eq? 'unquote (car form))
+           (cadr form))
+          ((eq? (car form) 'quasiquote)
+           (expand (cadr form)))
+          (else
+           (expand-list form))))
+  (expand (cadr exp)))
