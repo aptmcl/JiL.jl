@@ -25,6 +25,7 @@ cons(h::T, t::List{L}) where {T, L} =
 Base.convert(::Type{List{T}}, l::Nil{Union{}}) where {T} = Nil{T}()
 Base.convert(::Type{List{T1}}, l::Nil{T2}) where {T1, T2 <: T1} = Nil{T1}()
 Base.convert(::Type{List{T1}}, l::Cons{T2}) where {T1, T2 <: T1} = Cons{T1}(l.head, l.tail)
+Base.convert(::Type{List}, t::Tuple) = list(t...)
 
 list() = nil
 
@@ -101,6 +102,11 @@ Base.length(l::Cons) =
     end
     n
   end
+
+Base.last(l::Cons) =
+  isempty(l.tail) ?
+    l.head :
+    last(l.tail)
 
 Base.map(f::Base.Callable, lst::List) = list(f(e) for e in lst)
 Base.filter(f::Function, lst::List) = list(e for e in lst if f(e))
