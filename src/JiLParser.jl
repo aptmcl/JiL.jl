@@ -90,16 +90,15 @@ readTail(dotOkP, io::JiLIO) =
     end
   end
 
-Base.eof(io::JiLIO) = io.offset > length(io.input) #eof(io.io)
+Base.eof(io::JiLIO) = io.offset > lastindex(io.input)
 
 readChar(io::JiLIO) =
   eof(io) ?
     EOF_CHAR :
-    let c = io.input[io.offset] #Base.read(io.io, Char)
-      io.offset += 1
+    let c = io.input[io.offset]
+      io.offset = nextind(io.input, io.offset)
       c
     end
-
 
 readToken(io::JiLIO) =
   if pushedTokenP(io)
@@ -192,7 +191,7 @@ makeVectorFromList(Cons elems)
 readString(io::JiLIO) =
   let buffer = [], 
       ch
-    while (!eof(io) && (ch = readChar(io)) != '"')
+    while !eof(io) && (ch = readChar(io)) != '"'
       push!(buffer, ch)
     end
     string(buffer...)
@@ -286,7 +285,6 @@ end
 looks_like_lisp(text) = 
   startswith(text, r"\(") # this looks like lisp
 
-
 lisp_read(text, offset=1) =
   let parser = JiLIO(input=text, offset=offset)
     try
@@ -360,7 +358,7 @@ julia_jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno,
       if looks_like_lisp(SubString(text, offset + 1))
         let (ast, new_offset) = jil_parse_1(text, offset + 1)
           if ast isa Expr && ast.head === :incomplete
-            return (Expr(:incomplete, "Input error"), new_offset)
+            return (ast, new_offset)
           else
             (push!(forms, ast); offset = new_offset + 1)
           end
@@ -375,10 +373,8 @@ julia_jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno,
                                   julia_parser(SubString(text, 1, first(next_offset)), filename, lineno, offset, options)
           if ast isa Expr && ast.head === :toplevel
             (append!(forms, ast.args); offset = new_offset + 1)
-          elseif ast isa Expr && ast.head === :incomplete
-            return (Expr(:incomplete, "Input error"), new_offset)
           else
-            error("Unknown parse $ast")
+            return (ast, new_offset)
           end
         end
       end
@@ -401,6 +397,3 @@ install_jil_parser() = begin
 end
 
 #restore_julia_parser()
-
-
-
