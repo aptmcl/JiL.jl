@@ -45,7 +45,7 @@ julia> (+ 1 (* 2 (^ 3 4)))
 163
 
 # You can define functions using Julia syntax
-foo(x, y, z) = x + y + z
+julia> foo(x, y, z) = x + y + z
 foo (generic function with 1 method)
 
 # But you can also define functions using Lisp syntax
