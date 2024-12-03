@@ -1,8 +1,16 @@
 module JiL
-export debug_lisp_to_julia, install_jil_parser, restore_julia_parser, tojulia
+export debug_lisp_to_julia, install_jil_parser, restore_julia_parser, tojulia, @jil_str
 include("List.jl")
 include("ToJulia.jl")
 include("JiLParser.jl")
+
+macro jil_str(str)
+  let (ast, offset) = jil_parse(str, "nofile", 0, 0, false)
+    ast isa Expr && ast.head == :toplevel ?
+      QuoteNode(ast.args[1]) :
+      QuoteNode(ast)
+  end
+end
 
 __init__() = begin
   install_jil_parser() # Let's have the parser ready
