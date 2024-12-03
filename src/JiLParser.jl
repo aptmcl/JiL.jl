@@ -315,7 +315,7 @@ lang_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno, offs
       julia_jil_parse(text, filename, lineno, offset, options) :
       let (lang, text) = matched,
           parser = get_parser_for(lang)
-        println("Using parser '$parser'")
+        #println("Using parser '$parser'")
         isnothing(parser) ?
           (Expr(:incomplete, "No parser found for language '$lang'"), offset) :
           parser(text, filename, lineno, offset, options)
