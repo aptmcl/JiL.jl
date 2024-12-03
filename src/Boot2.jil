@@ -1,0 +1,4 @@
+#lang:jil
+
+(defmacro when (cond (... exprs))
+  `(if ,cond (begin ,@exprs) nothing))
