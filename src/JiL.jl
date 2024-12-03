@@ -7,8 +7,8 @@ include("JiLParser.jl")
 macro jil_str(str)
   let (ast, offset) = jil_parse(str, "nofile", 0, 0, false)
     ast isa Expr && ast.head == :toplevel ?
-      QuoteNode(ast.args[1]) :
-      QuoteNode(ast)
+      QuoteNode(Base.remove_linenums!(ast.args[1])) :
+      QuoteNode(Base.remove_linenums!(ast))
   end
 end
 
