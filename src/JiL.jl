@@ -1,5 +1,5 @@
 module JiL
-export debug_lisp_to_julia, install_jil_parser, restore_julia_parser, tojulia, @jil_str
+export debug_lisp_to_julia, install_jil_parser, restore_julia_parser, tojulia, @jil_str, @julia_str
 include("List.jl")
 include("ToJulia.jl")
 include("JiLParser.jl")
@@ -10,6 +10,10 @@ macro jil_str(str)
       QuoteNode(Base.remove_linenums!(ast.args[1])) :
       QuoteNode(Base.remove_linenums!(ast))
   end
+end
+
+macro julia_str(str)
+  QuoteNode(Base.remove_linenums!(Meta.parse(str)))
 end
 
 __init__() = begin
