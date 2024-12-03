@@ -5,7 +5,13 @@
 [![Build Status](https://github.com/aptmcl/JiL.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/aptmcl/JiL.jl/actions/workflows/CI.yml?query=branch%3Amaster)
 [![Coverage](https://codecov.io/gh/aptmcl/JiL.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/aptmcl/JiL.jl)
 
-JiL is a Lisp syntax for Julia.
+JiL means _JiL is Lisp_.
+
+Jil is a Lisp syntax for Julia.
+
+On the most basic level, JiL is about supporting a fully-parenthesized prefix syntax for Julia.
+
+However, JiL is much more than just that. In the good tradition of Lisp, we plan to develop JiL on top of JiL, improving the syntax and supporting different programming approaches.
 
 ## Installation
 
@@ -89,7 +95,8 @@ kkk (generic function with 1 method)
 julia> (kkk (kw z 3) (kw a 1) (kw b 2) 1)
 (1 2 3 Base.Pairs(:a => 1, :b => 2))
 
-# So far, this is a pretty annoying syntax. The good news is that we can also define macros, so we can start improving it.
+# So far, this is a pretty annoying syntax. The good news is that we can also define macros, 
+# so we can start improving it.
 # For example, we can implement a Scheme-like define form:
 (def define (macro (sig form (... extra_forms))
   (let ()
