@@ -31,12 +31,18 @@ julia> using Pkg; Pkg.add("JiL")
 using JiL
 
 # You can use Julia syntax
-julia> 1 + 2*3^4
+julia> 1 + 2 + 3
 6
+
+julia> 1 + 2*3^4
+163
 
 # But you can also use Lisp syntax
 julia> (+ 1 2 3)
 6
+
+julia> (+ 1 (* 2 (^ 3 4)))
+163
 
 # You can define functions using Julia syntax
 foo(x, y, z) = x + y + z
