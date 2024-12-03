@@ -30,7 +30,7 @@ Base.show(io::IO, scope::LocalScope) =
     print_scope_defs(scope.defs)
   end
 
-new_scope(parent, names, inits) =
+new_scope(names, inits, parent) =
   LocalScope(parent, Dict{Symbol, Any}(name=>init for (name, init) in zip(names, inits)))
 
 add_binding!(name, init, scope) =
@@ -107,6 +107,12 @@ tojulia(::Val{op}, args, scope) where {op} =
         Expr(:call, tojulia(op, scope), tojulia_vector(args, scope)...)
     end
 
+tojulia(::Val{:(...)}, (name,), scope) =
+  Expr(:(...), tojulia(name, scope))
+
+tojulia(::Val{:kw}, (name, init), scope) =
+  Expr(:kw, tojulia(name, scope), tojulia(init, scope))
+
 tojulia_vector(val, scope) =
   collect(Any, map(tojulia(scope), val))
 
@@ -122,6 +128,60 @@ tojulia(::Val{:quasiquote}, (expr, ), scope) =
 tojulia(::Val{:(=)}, args, scope) =
   :(==($(tojulia_vector(args, scope)...)))
 
+# Parameters
+# Given that parameters might refer to the previous ones, this needs to incrementally extend the scope
+tojulia_parameters(parameters, scope) =
+  isempty(parameters) ?
+    ([], scope) :
+    let (p, ps...) = parameters
+      p isa Cons && p.head === :parameters ? # We need to process the rest first
+        let (params, scope) = tojulia_parameters(ps, scope),
+            (param, scope) = tojulia_parameter(p, scope)
+          ([param, params...], scope)
+        end :
+        let (param, scope) = tojulia_parameter(p, scope),
+            (params, scope) = tojulia_parameters(ps, scope)
+          ([param, params...], scope)
+        end
+    end
+      
+tojulia_parameter(name::Symbol, scope) =
+  tojulia(name, scope), 
+  new_scope([name], [missing], scope)
+
+tojulia_parameter(p::Cons, scope) =
+  tojulia_parameter(Val{p.head}(), p.tail, scope)
+
+tojulia_parameter(::Val{:(...)}, (name,), scope) =
+  Expr(:(...), tojulia(name, scope)),
+  new_scope([name], [missing], scope)
+
+tojulia_parameter(::Val{:kw}, (name, init), scope) =
+  Expr(:kw, tojulia(name, scope), tojulia(init, scope)),
+  new_scope([name], [init], scope)
+
+tojulia_parameter(::Val{:parameters}, parameters, scope) =
+  let (params, scope) = tojulia_parameters(parameters, scope)
+    Expr(:parameters, params...), scope
+  end
+
+tojulia(::Val{Symbol("&key")}, expr, scope) =
+  let key_params = [p isa Cons && !(p.head === :(...)) ?
+                      Expr(:kw, tojulia(p.head, scope), tojulia(p.tail.head, scope)) :
+                      tojulia(p, scope)
+                    for p in expr]
+    Expr(:(parameters), key_params...)
+  end
+
+# Anonymous functions
+tojulia(::Val{:λ}, (params, body), scope) = 
+  tojulia(Val{:lambda}(), (params, body))
+
+tojulia(::Val{:lambda}, (parameters, body), scope) =
+  let (params, scope) = tojulia_parameters(parameters, scope)
+    :(($(params...),) -> $(tojulia(body, scope)))
+  end
+
 # Definitions
 tojulia(::Val{:def}, (sig, init), scope) =
   if sig isa Symbol
@@ -129,16 +189,16 @@ tojulia(::Val{:def}, (sig, init), scope) =
       add_binding!(sig, val, scope)
       :($(tojulia(sig, scope)) = $val)
     end
-  elseif sig isa Cons && sig.head isa Symbol # A named function definition
-    let name = tojulia(sig.head, scope),
-        params = tojulia_vector(sig.tail, scope),
-        body_scope = new_scope(scope, [name, params...], zeros(1 + length(params))), # name and params are in the body's scope
-        body = tojulia(init, body_scope)
-      add_binding!(name, JiLFunction(params, body, scope), scope)
-      :($(name)($(params...)) = $(body))
-    end
   elseif sig isa Cons
-    tojulia(list(:def, head(sig), list(:lambda, tail(sig), init), scope))
+    if sig.head isa Symbol # A named function definition
+      let (name, parameters, body) = (sig.head, sig.tail, init),
+          (params, body_scope) = tojulia_parameters(sig.tail, scope)
+        add_binding!(name, JiLFunction(params, body, scope), scope)
+        :($(tojulia(name, scope))($(params...),) = $(tojulia(body, body_scope)))
+      end
+    else
+      tojulia(list(:def, head(sig), list(:lambda, tail(sig), init), scope))
+    end
   else
     error("Unknown form $(list(:def, sig, init))")
   end
@@ -147,18 +207,6 @@ tojulia(::Val{:def}, (sig, init), scope) =
 tojulia(::Val{:if}, (cond, conseq, altern), scope) =
   :($(tojulia(cond, scope)) ? $(tojulia(conseq, scope)) : $(tojulia(altern, scope)))
 
-# Anonymous functions
-tojulia(::Val{:λ}, (params, body), scope) = 
-  tojulia(Val{:lambda}(), (params, body))
-
-tojulia(::Val{:lambda}, (params, body), scope) =
-  let params = tojulia_vector(params, scope),
-      body_scope = new_scope(scope, params, zeros(length(params))) # params are in the body's scope
-    :(($(params...),) -> $(tojulia(body, body_scope)))
-  end
-
-tojulia(::Val{:(...)}, expr, scope) =
-  Expr(:(...), tojulia_vector(expr, scope)...)
 
 # Macros
 # For now, nothing fancy, no phases, no hygiene, just CL-like macros
@@ -222,7 +270,7 @@ remove_macro_bindings(names, inits) =
 tojulia(::Val{:let}, (binds, body...), scope) =
   let names = tojulia_tuple(map(head, binds), scope),
       inits = tojulia_tuple(map(head ∘ tail, binds), scope),
-      scope = new_scope(scope, names, inits),
+      scope = new_scope(names, inits, scope),
       (let_names, let_inits) = remove_macro_bindings(names, inits) # We don't need the macros in the generated Julia code.
     :(let ($(let_names...),) = ($(let_inits...),)
       $(tojulia_vector(body, scope)...)
@@ -236,7 +284,7 @@ tojulia(::Val{Symbol("let*")}, (binds, body...), scope) =
           let bind = head(binds),
               name = tojulia(head(bind), scope),
               init = tojulia(head(tail(bind)), scope),
-              scope = new_scope(scope, [name], [init]),
+              scope = new_scope([name], [init], scope),
               (julia_binds, scope) = tojulia_binds(tail(binds), scope)
             isa_jil_macro(init) ? # We don't need the macros in the generated Julia code.
               (julia_binds, scope) :
