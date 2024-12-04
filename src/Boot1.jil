@@ -2,62 +2,45 @@
 
 ;;If you change this file, you need to force recompilation of the JiL package
 
-;;Scheme-like define
-(def define (macro (sig form (... extra_forms))
-  (list (quote def) sig (cons (quote begin) (cons form extra_forms)))))
-
-(def define (macro (sig form (... extra_forms))
-  (let ()
-    (def (to-jil-sig sig)
-      (if (isa sig Nil)
-        (list)
-        (if (isa (cdr sig) Symbol)
-          (list (car sig) (list '... (cdr sig)))
-          (cons (car sig) (to-jil-sig (cdr sig))))))
-    (if (isa sig Symbol)
-      (list 'def sig form)
-      (list 'def (to-jil-sig sig)
-            (if (isempty extra_forms)
-              form
-            (cons 'begin (cons form extra_forms))))))))
-
-
 ;;We can't use backquote yet, as cond is needed to define it
-(def cond (macro ((... clauses))
-  (if (null? clauses)
-    'false
-     (list 'if (if (eq? (caar clauses) 'else) 'true (caar clauses))
-       (cons 'begin (cdar clauses))
-       (cons 'cond (cdr clauses))))))
+(def cond
+  (macro ((... clauses))
+    (let ((clauses (list (... clauses))))
+      (if (null? clauses)
+        'false
+        (list 'if (if (eq? (caar clauses) 'else) 'true (caar clauses))
+              (cons 'begin (cdar clauses))
+                    (cons 'cond (cdr clauses)))))))
 
 (def macroexpand (macro (form)
   (let ((m (JiL.get_binding (head form) JiL.global_scope)))
     (list (quote quote) 
           (JiL.jil_macroexpand m (tail form) JiL.global_scope)))))
 
-(define (expand_quasiquote exp)
-  (define (splicing? form)
-    (and (pair? form)
-         (or (and (pair? (car form))
-                  (eq? (caar form) 'unquote-splicing))
-             (splicing? (cdr form)))))
-  (define (expand-list form)
-    (if (splicing? form)
-        (cons 'append
-              (map (lambda (x)
-                     (if (and (pair? x)
-                              (eq? (car x) 'unquote-splicing))
-                         (cadr x)
-                         (list 'list (expand x))))
-                   form))
-        (cons 'list (map expand form))))
-  (define (expand form)
-    (cond ((not (pair? form))
-           (list 'quote form))
-          ((eq? 'unquote (car form))
-           (cadr form))
-          ((eq? (car form) 'quasiquote)
-           (expand (cadr form)))
-          (else
-           (expand-list form))))
-  (expand (cadr exp)))
+(def (expand_quasiquote exp)
+  (begin
+    (def (splicing? form)
+      (and (pair? form)
+           (or (and (pair? (car form))
+                    (eq? (caar form) 'unquote-splicing))
+               (splicing? (cdr form)))))
+    (def (expand-list form)
+      (if (splicing? form)
+          (cons 'append
+                (map (lambda (x)
+                       (if (and (pair? x)
+                                (eq? (car x) 'unquote-splicing))
+                           (list 'convert 'List (cadr x))
+                           (list 'list (expand x))))
+                     form))
+          (cons 'list (map expand form))))
+    (def (expand form)
+      (cond ((not (pair? form))
+             (list 'quote form))
+            ((eq? 'unquote (car form))
+             (cadr form))
+            ((eq? (car form) 'quasiquote)
+             (expand (cadr form)))
+            (else
+             (expand-list form))))
+    (expand (cadr exp))))
