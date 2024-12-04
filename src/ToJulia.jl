@@ -219,23 +219,12 @@ end
 
 Base.show(io::IO, m::JiLMacro) =
   begin
-    println(io, "(macro $(m.parameters) -> $(m.body))")
+    println(io, "(macro $(m.parameters) $(m.body))")
   end
-
-maybe_adjust_to_varargs(params, body) =
-  isempty(params) ?
-    body :
-    let param = last(params)
-      param isa Cons && param.head === :(...) ?
-        let name = param.tail.head
-          list(:let, list(list(name, list(:convert, :List, name))), body)
-        end :
-        body
-    end
 
 tojulia(::Val{:macro}, (params, body), scope) =
   #The use of eval makes the macro belong to a different world => invokelatest
-  let expander = :(($(tojulia_vector(params, scope)...),) -> $(tojulia(maybe_adjust_to_varargs(params, body), scope)))
+  let expander = :(($(tojulia_vector(params, scope)...),) -> $(tojulia(body, scope)))
     debug_lisp_to_julia && println(" => ", expander)
     JiLMacro(scope, params, body, eval(expander))
   end
@@ -288,10 +277,10 @@ tojulia(::Val{Symbol("let*")}, (binds, body...), scope) =
               (julia_binds, scope) = tojulia_binds(tail(binds), scope)
             isa_jil_macro(init) ? # We don't need the macros in the generated Julia code.
               (julia_binds, scope) :
-              ([:($(name) = $(init)), julia_binds], scope)
+              ([:($(name) = $(init)), julia_binds...], scope)
           end
     let (julia_binds, scope) = tojulia_binds(binds, scope)
-      :(let $(julia_binds)
+      :(let $(julia_binds...)
          $(tojulia_vector(body, scope)...)
         end)
     end
@@ -302,3 +291,6 @@ tojulia(::Val{:and}, exprs, scope) =
   
 tojulia(::Val{:or}, exprs, scope) =
   Expr(:||, tojulia_vector(exprs, scope)...)
+
+tojulia(::Val{:export}, names, scope) =
+  Expr(:export, tojulia_vector(names, scope)...)
