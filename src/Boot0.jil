@@ -3,9 +3,24 @@
 ;;If you change this file, you need to force recompilation of the JiL package
 
 ;;These definitions need to be loaded first
+(export
+  list? pair? atom? symbol?
+  null?
+  empty?
+  car cdr
+  caar cadr cdar cddr
+  caaar caadr cadar caddr cdaar cdadr cddar cdddr
+  append
+  eq?
+  not
+  as-list)
 
-(def (pair? obj) (or (isa obj Cons) (isa obj Pair)))
+(def (list? obj) (or (isa obj Nil) (isa obj Cons)))
+(def (pair? obj) (or (isa obj Pair) (isa obj Cons)))
+(def (atom? obj) (not (or (isa obj Pair) (isa obj List))))
+(def (symbol? obj) (isa obj Symbol))
 (def null? isempty)
+(def empty? isempty)
 (def car head)
 (def cdr tail)
 (def (caar c) (car (car c)))
@@ -24,6 +39,12 @@
 (def eq? ===)
 (def not !)
 
-
-(def defmacro (macro (name params body)
-  (list 'def name (list 'macro params body))))
+(def (as-list v)
+  (if (list? v)
+    v
+    (if (isa v Tuple)
+      (list (... v))
+      (if (pair? v)
+        (cons (car v)
+              (as-list (cdr v)))
+        (list (list (quote ...) v))))))
