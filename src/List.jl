@@ -39,6 +39,7 @@ Base.convert(::Type{List}, t::Tuple) = list(t...)
 
 Base.isempty(lst::Nil) = true
 Base.isempty(lst::Cons) = false
+Base.isempty(lst::Pair) = false
 
 Base.firstindex(lst::List) = 1
 
@@ -131,10 +132,10 @@ Base.filter(f::Function, lst::List) = list(e for e in lst if f(e))
 # This amounts to type piracy, so let's avoid it.
 #Base.cat() = list()
 Base.cat(lst::List, lsts::List...) =
-  let T = typeof(lst).parameters[1]
-    n = length(lst)
+  let T = eltype(lst),
+      n = length(lst)
     for l in lsts
-      T2 = typeof(l).parameters[1]
+      T2 = eltype(l)
       T = typejoin(T, T2)
       n += length(l)
     end
@@ -150,7 +151,7 @@ Base.cat(lst::List, lsts::List...) =
       i += 1
       end
     end
-    let l = nil(T)
+    let l = Nil{T}()
       for i = i-1:-1:1
         l = cons(elems[i], l)
       end
