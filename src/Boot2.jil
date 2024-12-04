@@ -1,3 +1,38 @@
 #lang:jil
 
-'loaded
+;Scheme-like define
+(def (maybe-wrap-in-begin form extra-forms)
+  (if (isempty extra-forms)
+    form
+    `(begin ,form ,@extra-forms)))
+
+(def (maybe-convert-last-to-list params body)
+  (if (null? params)
+    body
+    (let ((param (last params)))
+      (if (and (pair? param) (eq? (car param) '...))
+        (let ((param-name (cadr param)))
+          `(let ((,param-name (as-list ,param-name)))
+             ,body))
+           body))))
+
+(def define 
+  (macro (sig form (... extra-forms))
+    (let ((body (maybe-wrap-in-begin form (as-list extra-forms))))
+      (if (symbol? sig)
+        `(def ,sig ,body)
+        (let ((name (car sig))
+              (params (as-list (cdr sig))))
+          `(def (,name ,@params)
+             ,(maybe-convert-last-to-list params body)))))))
+
+(def defmacro 
+  (macro (sig form (... extra-forms))
+    (let ((name (car sig))
+          (params (as-list (cdr sig)))
+          (body (maybe-wrap-in-begin form (as-list extra-forms))))
+      `(def ,name 
+         (macro ,params
+           ,(maybe-convert-last-to-list params body))))))
+
+(export cond define defmacro)
