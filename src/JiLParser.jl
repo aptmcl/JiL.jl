@@ -322,6 +322,11 @@ lang_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno, offs
       end
   end
 
+addform!(forms, form) =
+  form isa Expr && form.head === :toplevel ?
+    append!(forms, form.args) :
+    push!(forms, form)
+
 jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno, offset, options) =
   let forms = []
     offset += 1
@@ -330,7 +335,7 @@ jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno, offse
         offset += 1
       else
         let (form, new_offset) = jil_parse_1(text, offset)
-          (push!(forms, form); offset = new_offset + 1)
+          (addform!(forms, form); offset = new_offset + 1)
         end
       end
     end
@@ -360,7 +365,7 @@ julia_jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno,
           if ast isa Expr && ast.head === :incomplete
             return (ast, new_offset)
           else
-            (push!(forms, ast); offset = new_offset + 1)
+            (addform!(forms, ast); offset = new_offset + 1)
           end
         end
         while offset < length(text) && isspace(text[offset + 1])
