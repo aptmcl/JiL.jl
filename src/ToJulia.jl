@@ -70,7 +70,20 @@ Base.show(io::IO, f::JiLFunction) =
 # Currying
 tojulia(scope::Scope) = form -> tojulia(form, scope)
 
-tojulia(form) = tojulia(form, global_scope)
+# Julia macros can only be defined at the top level.
+# This means that local macros must be lifted.
+const lifted_forms = []
+
+lift!(form) = push!(lifted_forms, form)
+
+tojulia(form) = begin
+  empty!(lifted_forms)
+  let ast = tojulia(form, global_scope)
+    isempty(lifted_forms) ?
+      ast :
+      Expr(:toplevel, lifted_forms..., ast)
+  end
+end
 
 tojulia(form::Any, scope) = form
 
@@ -103,7 +116,7 @@ tojulia(::Val{op}, args, scope) where {op} =
     Expr(:macrocall, tojulia(op, scope), LineNumberNode(1, :JiL), tojulia_vector(args, scope)...) :
     let init = get_binding(op, scope)
       init isa JiLMacro ?
-        tojulia(jil_macroexpand(init, args, scope), scope) :
+        tojulia_macrocall(init, args, scope) :
         Expr(:call, tojulia(op, scope), tojulia_vector(args, scope)...)
     end
 
@@ -207,34 +220,77 @@ tojulia(::Val{:def}, (sig, init), scope) =
 tojulia(::Val{:if}, (cond, conseq, altern), scope) =
   :($(tojulia(cond, scope)) ? $(tojulia(conseq, scope)) : $(tojulia(altern, scope)))
 
-
+####################################################################
 # Macros
 # For now, nothing fancy, no phases, no hygiene, just CL-like macros
 struct JiLMacro
+  name
   scope
   parameters
   body
   expander
 end
 
+isa_jil_macro(val) =
+  val isa JiLMacro  
+
 Base.show(io::IO, m::JiLMacro) =
   begin
     println(io, "(macro $(m.parameters) $(m.body))")
   end
 
-tojulia(::Val{:macro}, (params, body), scope) =
-  #The use of eval makes the macro belong to a different world => invokelatest
-  let expander = :(($(tojulia_vector(params, scope)...),) -> $(tojulia(body, scope)))
-    debug_lisp_to_julia && println(" => ", expander)
-    JiLMacro(scope, params, body, eval(expander))
+#=
+Macros are an interesting challenge because we want them to accept sexps as arguments
+but Julia macros want to accept Exprs as arguments.
+There is a subset of macrocalls that fit that bill, e.g., those where each argument
+is translatable to Julia. These cases can be treated by implementing JiL macros as
+just Julia macros (modulo the lifting needed to make them toplevel, as this is mandatory
+in Julia) and then we just need to translate each argument to julia before we wrap all 
+of them in the Julia macrocall.
+However, there are macros where the arguments are not translatable to Julia, such as
+cond. In the cond case, each clause is a list of sexps but it must not be treated as a
+function call, even though it resembles one.
+
+A second problem, which I was hoping to avoid by resorting to Julia macros, is 
+assigning the correct modules to each identifier.
+
+A third problem, which, again, I was hopping to avoid by resorting to Julia macros,
+if hygiene.
+
+Jumping over the first problem, here is a possible solution.
+=#
+tojulia(::Val{:macro}, (name, params, body), scope) =
+  let macroname = Symbol(name, gensym()),
+      (params, body_scope) = tojulia_parameters(params, scope),
+      newmacro = :(macro $(macroname)($(params...),)
+       esc(tojulia($(tojulia(body, scope)), JiL.global_scope))
+      end)
+    debug_lisp_to_julia && println(" => ", newmacro)
+    add_binding!(name, JiLMacro(Symbol("@", macroname), scope, params, body, newmacro), scope)
+    scope === global_scope ?
+      newmacro :
+      (lift!(newmacro); :nothing)
   end
 
-isa_jil_macro(val) =
-  val isa JiLMacro  
+#=
+tojulia_macrocall(jilmacro, args, scope) =
+  Expr(:macrocall, jilmacro.name, LineNumberNode(1, :JiL), tojulia_vector(args, scope)...)
+=#  
+
+#=
+As discussed previously, this does not address the case that, in general, JiL macro
+arguments are not proper JiL expressions. One way to solve this is to force the s-expr
+structure (Cons, Pair, whatever) to enter the macro call. If Julia accepts it, then
+we might have a solution.
+=#
+
+tojulia_macrocall(jilmacro, args, scope) =
+  Expr(:macrocall, jilmacro.name, LineNumberNode(1, :JiL), args...)
+
+
 
 jil_macroexpand(jilmacro, args, scope) =
   Base.invokelatest(jilmacro.expander, args...) # The macro was compiled in an older world
-
 
 # Globals
 tojulia(::Val{:global}, (form, ), scope) = 
@@ -292,5 +348,11 @@ tojulia(::Val{:and}, exprs, scope) =
 tojulia(::Val{:or}, exprs, scope) =
   Expr(:||, tojulia_vector(exprs, scope)...)
 
+
 tojulia(::Val{:export}, names, scope) =
-  Expr(:export, tojulia_vector(names, scope)...)
+  let names = [let init = get_binding(name, scope)
+                 init isa JiLMacro ?
+                 init.name : name
+               end for name in names]
+    Expr(:export, tojulia_vector(names, scope)...)
+  end
