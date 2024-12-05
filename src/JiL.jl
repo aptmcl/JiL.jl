@@ -1,19 +1,51 @@
 module JiL
-export debug_lisp_to_julia, install_jil_parser, restore_julia_parser, tojulia, @jil_str, @julia_str
+export debug_lisp_to_julia, install_jil_parser, restore_julia_parser, tojulia, @jil_str, @jilm_str, @julia_str
 include("List.jl")
 include("ToJulia.jl")
 include("JiLParser.jl")
 
+clean_expr!(ex) = begin
+  if ex isa Expr
+    if ex.head === :block || ex.head === :quote
+      filter!(ex.args) do x
+          isa(x, Expr) && x.head === :line && return false
+          isa(x, LineNumberNode) && return false
+          return true
+      end
+    end
+    for subex in ex.args
+      subex isa Expr && clean_expr!(subex)
+    end
+    for (i, subex) in enumerate(ex.args)
+      if subex isa Expr && subex.head === :block && length(subex.args) == 1
+        ex.args[i] = subex.args[1]
+      end
+    end
+  elseif ex isa CodeInfo
+      ex.debuginfo = Core.DebugInfo(ex.debuginfo.def) # TODO: filter partially, but keep edges
+  end
+  return ex
+end
+
 macro jil_str(str)
   let (ast, offset) = jil_parse(str, "nofile", 0, 0, false)
-    ast isa Expr && ast.head == :toplevel ?
-      QuoteNode(Base.remove_linenums!(ast.args[1])) :
-      QuoteNode(Base.remove_linenums!(ast))
+    ast isa Expr && ast.head == :toplevel && length(ast.args) == 1 ?
+      QuoteNode(clean_expr!(ast.args[1])) :
+      QuoteNode(clean_expr!(ast))
   end
 end
 
+macro jilm_str(str)
+  let (ast, offset) = jil_parse(str, "nofile", 0, 0, false)
+    ast isa Expr && ast.head == :toplevel && length(ast.args) == 1 ?
+      QuoteNode(clean_expr!(macroexpand(JiL, ast.args[1]))) :
+      QuoteNode(clean_expr!(macroexpand(JiL, ast)))
+  end
+end
+
+
 macro julia_str(str)
-  QuoteNode(Base.remove_linenums!(Meta.parse(str)))
+  QuoteNode(clean_expr!(Meta.parse(str)))
 end
 
 __init__() = begin
