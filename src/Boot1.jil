@@ -3,19 +3,18 @@
 ;;If you change this file, you need to force recompilation of the JiL package
 
 ;;We can't use backquote yet, as cond is needed to define it
-(def cond
-  (macro ((... clauses))
-    (let ((clauses (list (... clauses))))
-      (if (null? clauses)
-        'false
-        (list 'if (if (eq? (caar clauses) 'else) 'true (caar clauses))
-              (cons 'begin (cdar clauses))
-                    (cons 'cond (cdr clauses)))))))
+(macro cond ((... clauses))
+  (let ((clauses (list (... clauses))))
+    (if (null? clauses)
+      'false
+      (list 'if (if (eq? (caar clauses) 'else) 'true (caar clauses))
+            (cons 'begin (cdar clauses))
+                  (cons 'cond (cdr clauses))))))
 
-(def macroexpand (macro (form)
+(macro macroexpand (form)
   (let ((m (JiL.get_binding (head form) JiL.global_scope)))
     (list (quote quote) 
-          (JiL.jil_macroexpand m (tail form) JiL.global_scope)))))
+          (JiL.jil_macroexpand m (tail form) JiL.global_scope))))
 
 (def (expand_quasiquote exp)
   (begin
@@ -35,12 +34,13 @@
                      form))
           (cons 'list (map expand form))))
     (def (expand form)
-      (cond ((not (pair? form))
-             (list 'quote form))
-            ((eq? 'unquote (car form))
-             (cadr form))
-            ((eq? (car form) 'quasiquote)
-             (expand (cadr form)))
-            (else
-             (expand-list form))))
+      (if (not (pair? form))
+        (list 'quote form)
+        (if (eq? 'unquote (car form))
+          (cadr form)
+          (if (eq? (car form) 'quasiquote)
+            (expand (cadr form))
+            (expand-list form)))))
     (expand (cadr exp))))
+
+(export cond)

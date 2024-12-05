@@ -16,23 +16,21 @@
              ,body))
            body))))
 
-(def define 
-  (macro (sig form (... extra-forms))
-    (let ((body (maybe-wrap-in-begin form (as-list extra-forms))))
-      (if (symbol? sig)
-        `(def ,sig ,body)
-        (let ((name (car sig))
-              (params (as-list (cdr sig))))
-          `(def (,name ,@params)
-             ,(maybe-convert-last-to-list params body)))))))
+(macro define (sig form (... extra-forms))
+  (let ((body (maybe-wrap-in-begin form (as-list extra-forms))))
+     (if (symbol? sig)
+       `(def ,sig ,body)
+       (let ((name (car sig))
+             (params (as-list (cdr sig))))
+         `(def (,name ,@params)
+            ,(maybe-convert-last-to-list params body))))))
 
-(def defmacro 
-  (macro (sig form (... extra-forms))
+(macro defmacro (sig form (... extra-forms))
     (let ((name (car sig))
           (params (as-list (cdr sig)))
           (body (maybe-wrap-in-begin form (as-list extra-forms))))
       `(def ,name 
          (macro ,params
-           ,(maybe-convert-last-to-list params body))))))
+           ,(maybe-convert-last-to-list params body)))))
 
-(export cond define defmacro)
+(export define defmacro)
