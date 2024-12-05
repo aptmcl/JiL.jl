@@ -2,9 +2,9 @@ export List, Nil, Cons, list, cons, nil, head, tail
 
 abstract type Tree{L,R} end
 
-abstract type List{T} <: Tree{T,List{T}} end
+abstract type List{E} <: Tree{E,List{E}} end
 
-struct Nil{T} <: List{T} end
+struct Nil{E} <: List{E} end
 
 struct Cons{E} <: List{E}
   head::E
@@ -15,7 +15,6 @@ end
 
 const nil = Nil{Union{}}()
 
-#cons(h::E, t::Nil{T}) where {E,T<:E} = Cons{E}(h, Nil{E}()) Use conversion
 cons(h::F, t::List{E}) where {E,F<:E} = Cons{E}(h, t)
 cons(h::F, t::List{E}) where {E,F} =
   let Type = typejoin(F, E)
@@ -39,7 +38,6 @@ Base.convert(::Type{List}, t::Tuple) = list(t...)
 
 Base.isempty(lst::Nil) = true
 Base.isempty(lst::Cons) = false
-Base.isempty(lst::Pair) = false
 
 Base.firstindex(lst::List) = 1
 
