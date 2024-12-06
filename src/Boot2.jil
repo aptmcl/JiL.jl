@@ -1,5 +1,13 @@
 #lang:jil
 
+(macro cond ((... clauses))
+  (let ((clauses (list (... clauses))))
+    (if (null? clauses)
+      'false
+      `(if ,(if (eq? (caar clauses) 'else) 'true (caar clauses))
+            (begin ,@(cdar clauses))
+            (cond ,@(cdr clauses))))))
+
 ;Scheme-like define
 (def (maybe-wrap-in-begin form extra-forms)
   (if (isempty extra-forms)
@@ -29,8 +37,7 @@
     (let ((name (car sig))
           (params (as-list (cdr sig)))
           (body (maybe-wrap-in-begin form (as-list extra-forms))))
-      `(def ,name 
-         (macro ,params
-           ,(maybe-convert-last-to-list params body)))))
+      `(macro ,name ,params
+         ,(maybe-convert-last-to-list params body))))
 
-(export define defmacro)
+(export define defmacro cond)

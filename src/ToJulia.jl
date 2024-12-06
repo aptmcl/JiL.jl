@@ -4,6 +4,7 @@ struct GlobalScope <: Scope
   defs::Dict{Symbol, Any}
 end
 
+const null_scope = GlobalScope(Dict{Symbol, Any}())
 const global_scope = GlobalScope(Dict{Symbol, Any}())
 
 print_scope_defs(defs) = begin
@@ -74,14 +75,14 @@ tojulia(scope::Scope) = form -> tojulia(form, scope)
 # This means that local macros must be lifted.
 const lifted_forms = []
 
-lift!(form) = push!(lifted_forms, form)
+lift!(form) = begin
+  push!(lifted_forms, form)
+  end
 
-tojulia(form) = begin
+tojulia_toplevel(form) = begin
   empty!(lifted_forms)
   let ast = tojulia(form, global_scope)
-    isempty(lifted_forms) ?
-      ast :
-      Expr(:toplevel, lifted_forms..., ast)
+    Expr(:toplevel, lifted_forms..., ast) 
   end
 end
 
@@ -115,8 +116,9 @@ tojulia(::Val{op}, args, scope) where {op} =
   op isa Symbol && String(op)[1] == '@' ? #julia macro
     Expr(:macrocall, tojulia(op, scope), LineNumberNode(1, :JiL), tojulia_vector(args, scope)...) :
     let init = get_binding(op, scope)
+      #println("Binding for $op is $init")
       init isa JiLMacro ?
-        tojulia_macrocall(init, args, scope) :
+        tojulia_macrocall(op, init, args, scope) :
         Expr(:call, tojulia(op, scope), tojulia_vector(args, scope)...)
     end
 
@@ -188,7 +190,7 @@ tojulia(::Val{Symbol("&key")}, expr, scope) =
 
 # Anonymous functions
 tojulia(::Val{:λ}, (params, body), scope) = 
-  tojulia(Val{:lambda}(), (params, body))
+  tojulia(Val{:lambda}(), (params, body), scope)
 
 tojulia(::Val{:lambda}, (parameters, body), scope) =
   let (params, scope) = tojulia_parameters(parameters, scope)
@@ -196,24 +198,27 @@ tojulia(::Val{:lambda}, (parameters, body), scope) =
   end
 
 # Definitions
-tojulia(::Val{:def}, (sig, init), scope) =
-  if sig isa Symbol
-    let val = tojulia(init, scope)
-      add_binding!(sig, val, scope)
-      :($(tojulia(sig, scope)) = $val)
-    end
-  elseif sig isa Cons
-    if sig.head isa Symbol # A named function definition
-      let (name, parameters, body) = (sig.head, sig.tail, init),
-          (params, body_scope) = tojulia_parameters(sig.tail, scope)
-        add_binding!(name, JiLFunction(params, body, scope), scope)
-        :($(tojulia(name, scope))($(params...),) = $(tojulia(body, body_scope)))
+tojulia(::Val{:def}, (sig, inits...), scope) =
+  let inits = collect(inits),
+      init = length(inits) == 1 ? inits[1] : error("Incorrect number of arguments to def") 
+    if sig isa Symbol
+      let val = tojulia(init, scope)
+        add_binding!(sig, val, scope)
+        :($(tojulia(sig, scope)) = $val)
+      end
+    elseif sig isa Cons
+      if sig.head isa Symbol # A named function definition
+        let (name, parameters, body) = (sig.head, sig.tail, init),
+            (params, body_scope) = tojulia_parameters(sig.tail, scope)
+          add_binding!(name, JiLFunction(params, body, scope), scope)
+          :($(tojulia(name, scope))($(params...),) = $(tojulia(body, body_scope)))
+        end
+      else
+        tojulia(list(:def, head(sig), list(:lambda, tail(sig), init), scope))
       end
     else
-      tojulia(list(:def, head(sig), list(:lambda, tail(sig), init), scope))
+      error("Unknown form $(list(:def, sig, init))")
     end
-  else
-    error("Unknown form $(list(:def, sig, init))")
   end
 
 # Conditional expressions
@@ -236,7 +241,7 @@ isa_jil_macro(val) =
 
 Base.show(io::IO, m::JiLMacro) =
   begin
-    println(io, "(macro $(m.parameters) $(m.body))")
+    println(io, "(macro $(m.name) $(m.parameters) $(m.body))")
   end
 
 #=
@@ -260,15 +265,18 @@ if hygiene.
 Jumping over the first problem, here is a possible solution.
 =#
 tojulia(::Val{:macro}, (name, params, body), scope) =
-  let macroname = Symbol(name, gensym()),
-      (params, body_scope) = tojulia_parameters(params, scope),
-      newmacro = :(macro $(macroname)($(params...),)
-       esc(tojulia($(tojulia(body, scope)), JiL.global_scope))
+  let jname = tojulia(name, scope),
+      uniquejname = Symbol(jname, gensym()),
+      macroname = Symbol("@", uniquejname),
+      (juparams, body_scope) = tojulia_parameters(params, scope),
+      newmacro = :(macro $(uniquejname)($(juparams...),)
+         esc(JiL.tojulia($(tojulia(body, scope)), JiL.global_scope))
       end)
-    debug_lisp_to_julia && println(" => ", newmacro)
-    add_binding!(name, JiLMacro(Symbol("@", macroname), scope, params, body, newmacro), scope)
+    #debug_lisp_to_julia && println(" => ", newmacro)
+    add_binding!(name, JiLMacro(macroname, scope, params, body, newmacro), scope)
+    #println("GlobalScope: $(scope === global_scope)")
     scope === global_scope ?
-      newmacro :
+      Expr(:toplevel, newmacro, :($jname = $macroname)) :
       (lift!(newmacro); :nothing)
   end
 
@@ -284,13 +292,56 @@ structure (Cons, Pair, whatever) to enter the macro call. If Julia accepts it, t
 we might have a solution.
 =#
 
-tojulia_macrocall(jilmacro, args, scope) =
-  Expr(:macrocall, jilmacro.name, LineNumberNode(1, :JiL), args...)
+tojulia_macrocall(name, jilmacro, args, scope) =
+  Expr(:macrocall, jilmacro.scope == global_scope ? name : jilmacro.name, LineNumberNode(1, :JiL), args...)
+######################################
+#=
+Given that JiL macros use Julia macros, we can define macroexpand using the 
+primitive macro-expansion mechanism:
 
+(macro macro-expand (form)
+  `(@macroexpand ,form))
 
+However, Julia already has Base.macroexpand and this is going to create a conflict,
+forcing users to qualify the use.
 
-jil_macroexpand(jilmacro, args, scope) =
-  Base.invokelatest(jilmacro.expander, args...) # The macro was compiled in an older world
+On the other hand, if we decide to implement JiL macros differently, we will have 
+to change the macro-expansion, so it makes sense to have native support for it.
+=#
+
+clean_expr!(ex) = begin
+  if ex isa Expr
+    if ex.head === :block || ex.head === :quote
+      filter!(ex.args) do x
+          isa(x, Expr) && x.head === :line && return false
+          isa(x, LineNumberNode) && return false
+          return true
+      end
+    end
+    for subex in ex.args
+      subex isa Expr && clean_expr!(subex)
+    end
+    for (i, subex) in enumerate(ex.args)
+      if subex isa Expr && subex.head === :block && length(subex.args) == 1
+        ex.args[i] = subex.args[1]
+      end
+    end
+  elseif ex isa CodeInfo
+      ex.debuginfo = Core.DebugInfo(ex.debuginfo.def) # TODO: filter partially, but keep edges
+  end
+  return ex
+end
+
+tojulia(::Val{:macroexpand}, (form, ), scope) =
+  :(JiL.clean_expr!(@macroexpand($(tojulia(form, scope)))))
+
+#==============================#
+
+tojulia(::Val{:macrolet}, (binds, body...), scope) =
+  let local_scope = new_scope([], [], scope),
+      macros = [tojulia(Val{:macro}(), bind, local_scope) for bind in binds]
+    tojulia(list(:begin, body...), local_scope)
+  end
 
 # Globals
 tojulia(::Val{:global}, (form, ), scope) = 
@@ -350,9 +401,9 @@ tojulia(::Val{:or}, exprs, scope) =
 
 
 tojulia(::Val{:export}, names, scope) =
-  let names = [let init = get_binding(name, scope)
+  let names = names #=[let init = get_binding(name, scope)
                  init isa JiLMacro ?
                  init.name : name
-               end for name in names]
+               end for name in names]=#
     Expr(:export, tojulia_vector(names, scope)...)
   end

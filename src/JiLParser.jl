@@ -348,7 +348,7 @@ jil_parse_1(text, offset) =
   let (lisp_form, new_offset) = lisp_read(text, offset)
     lisp_form isa Expr ?
       (lisp_form, new_offset) :
-      let julia_form = tojulia(lisp_form)
+      let julia_form = tojulia_toplevel(lisp_form)
         debug_lisp_to_julia && println(" => ", julia_form)
         (julia_form, new_offset)
       end

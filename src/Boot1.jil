@@ -2,20 +2,6 @@
 
 ;;If you change this file, you need to force recompilation of the JiL package
 
-;;We can't use backquote yet, as cond is needed to define it
-(macro cond ((... clauses))
-  (let ((clauses (list (... clauses))))
-    (if (null? clauses)
-      'false
-      (list 'if (if (eq? (caar clauses) 'else) 'true (caar clauses))
-            (cons 'begin (cdar clauses))
-                  (cons 'cond (cdr clauses))))))
-
-(macro macroexpand (form)
-  (let ((m (JiL.get_binding (head form) JiL.global_scope)))
-    (list (quote quote) 
-          (JiL.jil_macroexpand m (tail form) JiL.global_scope))))
-
 (def (expand_quasiquote exp)
   (begin
     (def (splicing? form)

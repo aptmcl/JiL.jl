@@ -195,10 +195,9 @@ We can also define macros.
 Note that these are not Julia macros, they are JiL macros. 
 As an example, consider the form (when <condition> <action>)
 ```scheme
-julia> (def when
-         (macro (condition action)
-           (list (quote if) condition action (quote nothing))))
-(macro (condition action) (list (quote if) condition action (quote nothing)))
+julia> (macro when (condition action)
+         (list (quote if) condition action (quote nothing)))
+@when##241 (macro with 1 method)
 ```
 Let's test it
 ```scheme
@@ -214,14 +213,13 @@ cond takes an arbitrary number of clauses, so we need varargs.
 Here, it is important to remember that varargs are tuples.
 If we prefer to process them as lists, we need to convert them first.
 ```scheme
-julia> (def cond
-         (macro ((... clauses))
-           (let ((clauses (as-list clauses)))
-             (if (null? clauses)
-               'false
-               (list 'if (if (eq? (caar clauses) 'else) 'true (caar clauses))
-                     (cons 'begin (cdar clauses))
-                           (cons 'cond (cdr clauses)))))))
+julia> (macro cond ((... clauses))
+          (let ((clauses (as-list clauses)))
+            (if (null? clauses)
+              'false
+              (list 'if (if (eq? (caar clauses) 'else) 'true (caar clauses))
+                    (cons 'begin (cdar clauses))
+                          (cons 'cond (cdr clauses))))))
 ```
 Here is an example:
 ```scheme
@@ -262,12 +260,11 @@ is available through the traditional characters ` and , and ,@.
 This simplifies the generalization of the when macro to 
 accept any number of actions.
 ```scheme
-julia> (def when
-         (macro (condition (... actions))
-           (let ((actions (as-list actions)))
-             `(if ,condition 
-                (begin ,@actions)
-                nothing))))
+julia> (macro when (condition (... actions))
+         (let ((actions (as-list actions)))
+           `(if ,condition 
+              (begin ,@actions)
+              nothing)))
 
 julia> (when (= (+ 1 1) 3)
          (println "Good math")
@@ -356,7 +353,6 @@ julia> (mystery 1)
 We can apply the same principles to provide a simplified 
 form of macro definition
 ```scheme
-
 (def defmacro 
   (macro (sig form (... extra-forms))
     (let ((name (car sig))
@@ -368,9 +364,87 @@ form of macro definition
 ```
 Using this form we can further simplify the definition of
 the when macro.
-```scheme
 
-julia> (defmacro (when condition . actions)
-         `(if ,condition 
-            (begin ,@actions)
-            nothing))```
+```scheme
+(defmacro (when condition . actions)
+  `(if ,condition 
+     (begin ,@actions)
+     nothing))
+```
+
+Note that macro bindings use lexical scope. This means that the traditional lexical shadowing rules apply.
+Note that it does not mean that the macro body captures the local scope. It doesn't. 
+This does not prevent the macro from expanding into names that are bound in the local scope.
+
+Here is a contrived example that demonstrates shadowing:
+
+```scheme
+julia> (macro foo () '"Outer macro")
+@foo##242 (macro with 1 method)
+
+julia> (list (foo) 
+         (let ((foo (lambda () "Inner function")))
+           (list (foo)
+             (let ()
+               (macro foo () '"Inner macro")
+               (foo)))))
+("Outer macro" ("Inner function" "Inner macro"))
+```
+
+The pattern 
+```scheme
+(let ()
+  (macro ...)
+  ...)
+```
+illustrates the creation of locally-scoped macros. This pattern is directly supported
+by the macrolet form:
+
+```scheme
+(list (foo) 
+  (let ((foo (lambda () "Inner function")))
+    (list (foo)
+      (macrolet ((foo () '"Inner macro"))
+        (foo)))))
+```
+
+Obviously, these macros suffer from a total lack of hygiene and _intended_ name capture is an obvious possibility.
+
+```scheme
+julia> (defmacro (capture-i)
+         'i)
+@capture-i##252 (macro with 1 method)
+
+julia> (let ((i 10))
+         (+ (capture-i)
+            (let ((i 20))
+              (capture-i))))
+30
+```
+
+Obviously, these macros suffer from a total lack of hygiene and _unintended_ name capture is an obvious possibility.
+
+```scheme
+julia> (defmacro (captured-i expr)
+         `(let ((i 10))
+            ,expr))
+@captured-i##253 (macro with 1 method)
+
+julia> (let ((i 20))
+         (+ i (captured-i i)))
+30
+```
+
+Obviously, when needed, gensym should be used:
+
+```scheme
+julia> (defmacro (non-captured-i expr)
+         (let ((i (gensym)))
+           `(let ((,i 10))
+              ,expr)))
+@non-captured-i##254 (macro with 1 method)
+
+julia> (let ((i 20))
+         (+ i (non-captured-i i)))
+40
+```
