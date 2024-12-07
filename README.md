@@ -75,7 +75,9 @@ But you can also call it using Lisp syntax
 julia> (foo 1 2 3)
 6
 ```
-Function definition leverage all Julia capabilities, e.g.,
+Function definition leverage all Julia capabilities, albeit at a very lower level.
+The goal is that higher level syntaxes can be defined on top of these capabilities.
+
 Optional parameters
 ```scheme
 julia> (def (bar x (kw y 1)) (list x y))
@@ -448,3 +450,19 @@ julia> (let ((i 20))
          (+ i (non-captured-i i)))
 40
 ```
+
+Identifier macros are also available, via symbol-macro and symbol-macrolet. Here are two examples:
+
+```scheme
+julia> (symbol-macro rnd (rand Int8))
+@rnd##249 (macro with 1 method)
+
+julia> (list rnd rnd rnd)
+(55 30 -89)
+
+julia> (symbol-macrolet ((x 'foo))
+         (list x (let ((x 'bar)) x)))
+(foo bar)
+```
+
+
