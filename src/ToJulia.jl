@@ -88,7 +88,13 @@ end
 
 tojulia(form::Any, scope) = form
 
-tojulia(form::Symbol, scope) = 
+#= 
+Due to the presence of symbol macros, We need to distinguish a symbol being assigned from a symbol being evaluated.
+Only in latter should we attempt to expand symbol macros. 
+We are not considering the CL exception of generalized assignment of symbol macros.
+=#
+
+tojulia_var(form::Symbol, scope) =
   let token = String(form)
     '.' in token ?
       let (pkg, name) = split(token, '.')
@@ -96,6 +102,20 @@ tojulia(form::Symbol, scope) =
       end :
       form
   end
+
+tojulia(form::Symbol, scope) =
+  let init = get_binding(form, scope)
+    init isa JiLSymbolMacro ?
+      tojulia_macrocall(form, init, (), scope) :
+      let token = String(form)
+        '.' in token ?
+          let (pkg, name) = split(token, '.')
+            Expr(:., Symbol(pkg), QuoteNode(Symbol(name)))
+          end :
+          form
+      end
+  end
+
 
 tojulia(form::Nil, scope) = form
 
@@ -129,7 +149,7 @@ tojulia(::Val{:kw}, (name, init), scope) =
   Expr(:kw, tojulia(name, scope), tojulia(init, scope))
 
 tojulia_vector(val, scope) =
-  collect(Any, map(tojulia(scope), val))
+  [tojulia(e, scope) for e in val]
 
 tojulia_tuple(val, scope) =
   tuple(tojulia_vector(val, scope)...)
@@ -200,18 +220,18 @@ tojulia(::Val{:lambda}, (parameters, body), scope) =
 # Definitions
 tojulia(::Val{:def}, (sig, inits...), scope) =
   let inits = collect(inits),
-      init = length(inits) == 1 ? inits[1] : error("Incorrect number of arguments to def") 
+      init = length(inits) == 1 ? inits[1] : error("Incorrect number of arguments to def")
     if sig isa Symbol
       let val = tojulia(init, scope)
         add_binding!(sig, val, scope)
-        :($(tojulia(sig, scope)) = $val)
+        :($(tojulia_var(sig, scope)) = $val)
       end
     elseif sig isa Cons
       if sig.head isa Symbol # A named function definition
         let (name, parameters, body) = (sig.head, sig.tail, init),
             (params, body_scope) = tojulia_parameters(sig.tail, scope)
           add_binding!(name, JiLFunction(params, body, scope), scope)
-          :($(tojulia(name, scope))($(params...),) = $(tojulia(body, body_scope)))
+          :($(tojulia_var(name, scope))($(params...),) = $(tojulia(body, body_scope)))
         end
       else
         tojulia(list(:def, head(sig), list(:lambda, tail(sig), init), scope))
@@ -225,6 +245,26 @@ tojulia(::Val{:def}, (sig, inits...), scope) =
 tojulia(::Val{:if}, (cond, conseq, altern), scope) =
   :($(tojulia(cond, scope)) ? $(tojulia(conseq, scope)) : $(tojulia(altern, scope)))
 
+# Abstract types
+tojulia(::Val{:type}, (name, supers...), scope) =
+  let supers = collect(supers),
+      jname = tojulia_var(name, scope),
+      nsupers = length(supers)
+    nsupers == 0 ?
+      :(abstract type $jname end) :
+      nsupers == 1 ?
+        :(abstract type $jname $(tojulia(first(super), scope)) end) :
+        error("Can only have one supertype!")
+  end
+
+tojulia(::Val{:struct}, (name_super, slots...), scope) =
+  let slots = collect(slots),
+      (jname, super) = name_super isa Symbol ? 
+                         (tojulia_var(name_super, scope), Any) : 
+                         (tojulia_var(head(name_super), scope), tojulia(head(read(name_super)), scope))
+    :(struct $jname <: $(super); $([tojulia_var(slot, scope) for slot in slots]...) end)
+  end
+
 ####################################################################
 # Macros
 # For now, nothing fancy, no phases, no hygiene, just CL-like macros
@@ -235,9 +275,6 @@ struct JiLMacro
   body
   expander
 end
-
-isa_jil_macro(val) =
-  val isa JiLMacro  
 
 Base.show(io::IO, m::JiLMacro) =
   begin
@@ -265,7 +302,7 @@ if hygiene.
 Jumping over the first problem, here is a possible solution.
 =#
 tojulia(::Val{:macro}, (name, params, body), scope) =
-  let jname = tojulia(name, scope),
+  let jname = tojulia_var(name, scope),
       uniquejname = Symbol(jname, gensym()),
       macroname = Symbol("@", uniquejname),
       (juparams, body_scope) = tojulia_parameters(params, scope),
@@ -274,7 +311,6 @@ tojulia(::Val{:macro}, (name, params, body), scope) =
       end)
     #debug_lisp_to_julia && println(" => ", newmacro)
     add_binding!(name, JiLMacro(macroname, scope, params, body, newmacro), scope)
-    #println("GlobalScope: $(scope === global_scope)")
     scope === global_scope ?
       Expr(:toplevel, newmacro, :($jname = $macroname)) :
       (lift!(newmacro); :nothing)
@@ -335,13 +371,58 @@ end
 tojulia(::Val{:macroexpand}, (form, ), scope) =
   :(JiL.clean_expr!(@macroexpand($(tojulia(form, scope)))))
 
-#==============================#
+###########################################
 
 tojulia(::Val{:macrolet}, (binds, body...), scope) =
-  let local_scope = new_scope([], [], scope),
-      macros = [tojulia(Val{:macro}(), bind, local_scope) for bind in binds]
+  let local_scope = new_scope([], [], scope)
+    for bind in binds
+      tojulia(Val{:macro}(), bind, local_scope) # They are going to be lifted
+    end
     tojulia(list(:begin, body...), local_scope)
   end
+
+####################################################################
+# Symbol Macros
+# For now, nothing fancy, no phases, no hygiene, just CL-like macros
+struct JiLSymbolMacro
+  name
+  scope
+  body
+  expander
+end
+
+Base.show(io::IO, m::JiLSymbolMacro) =
+  begin
+    println(io, "(symbol-macro $(m.name) $(m.body))")
+  end
+
+
+tojulia(::Val{:var"symbol-macro"}, (name, body), scope) =
+  let jname = tojulia_var(name, scope),
+      uniquejname = Symbol(jname, gensym()),
+      macroname = Symbol("@", uniquejname),
+      newmacro = :(macro $(uniquejname)()
+         esc(JiL.tojulia($(tojulia(list(:quote, body), scope)), JiL.global_scope))
+      end)
+    #debug_lisp_to_julia && println(" => ", newmacro)
+    add_binding!(name, JiLSymbolMacro(macroname, scope, body, newmacro), scope)
+    scope === global_scope ?
+      Expr(:toplevel, newmacro, :($jname = $macroname)) :
+      (lift!(newmacro); :nothing)
+  end
+
+#=
+(symbol-macrolet ((x 'foo))
+   (list x (let ((x 'bar)) x)))
+=#
+tojulia(::Val{:var"symbol-macrolet"}, (binds, body...), scope) =
+  let local_scope = new_scope([], [], scope)
+    for bind in binds
+      tojulia(Val{:var"symbol-macro"}(), bind, local_scope) # They are going to be lifted
+    end
+    tojulia(list(:begin, body...), local_scope)
+  end
+
 
 # Globals
 tojulia(::Val{:global}, (form, ), scope) = 
@@ -355,20 +436,12 @@ tojulia(::Val{:using}, (form, ), scope) =
 tojulia(::Val{:begin}, forms, scope) =
   :(begin $(tojulia_vector(forms, scope)...) end)
 
-remove_macro_bindings(names, inits) =
-  let names_inits = [(name, init) for (name, init) in zip(names, inits) if !isa_jil_macro(init)], 
-      let_names = map(t->t[1], names_inits),
-      let_inits = map(t->t[2], names_inits)
-    (let_names, let_inits)
-  end
-
 # Local scopes
 tojulia(::Val{:let}, (binds, body...), scope) =
-  let names = tojulia_tuple(map(head, binds), scope),
-      inits = tojulia_tuple(map(head ∘ tail, binds), scope),
-      scope = new_scope(names, inits, scope),
-      (let_names, let_inits) = remove_macro_bindings(names, inits) # We don't need the macros in the generated Julia code.
-    :(let ($(let_names...),) = ($(let_inits...),)
+  let names = [tojulia_var(head(bind), scope) for bind in binds],
+      inits = [tojulia(head(tail(bind)), scope) for bind in binds],
+      scope = new_scope(names, inits, scope)
+    :(let ($(names...),) = ($(inits...),)
       $(tojulia_vector(body, scope)...)
       end)
   end
@@ -378,13 +451,11 @@ tojulia(::Val{Symbol("let*")}, (binds, body...), scope) =
         isempty(binds) ?
           ([], scope) :
           let bind = head(binds),
-              name = tojulia(head(bind), scope),
+              name = tojulia_var(head(bind), scope),
               init = tojulia(head(tail(bind)), scope),
               scope = new_scope([name], [init], scope),
               (julia_binds, scope) = tojulia_binds(tail(binds), scope)
-            isa_jil_macro(init) ? # We don't need the macros in the generated Julia code.
-              (julia_binds, scope) :
-              ([:($(name) = $(init)), julia_binds...], scope)
+            ([:($(name) = $(init)), julia_binds...], scope)
           end
     let (julia_binds, scope) = tojulia_binds(binds, scope)
       :(let $(julia_binds...)
@@ -405,5 +476,5 @@ tojulia(::Val{:export}, names, scope) =
                  init isa JiLMacro ?
                  init.name : name
                end for name in names]=#
-    Expr(:export, tojulia_vector(names, scope)...)
+    Expr(:export, [tojulia_var(name, scope) for name in names]...)
   end
