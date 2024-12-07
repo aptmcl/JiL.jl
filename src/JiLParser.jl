@@ -283,7 +283,7 @@ end
 
 
 looks_like_lisp(text) = 
-  startswith(text, r"\(") # this looks like lisp
+  startswith(text, r"\([^,]*$") # this looks like lisp
 
 lisp_read(text, offset=1) =
   let parser = JiLIO(input=text, offset=offset)
@@ -372,7 +372,7 @@ julia_jil_parse(text::Union{Core.SimpleVector,String}, filename::String, lineno,
           offset += 1
         end
       else
-        let next_offset = findnext(r"\r?\n\("s, text, offset + 1),
+        let next_offset = findnext(r"\r?\n\([^,]*$"s, text, offset + 1),
             (ast, new_offset) = isnothing(next_offset) ? 
                                   julia_parser(text, filename, lineno, offset, options) :
                                   julia_parser(SubString(text, 1, first(next_offset)), filename, lineno, offset, options)
