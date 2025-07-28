@@ -598,11 +598,11 @@ tojulia(::Val{:var"symbol-macro"}, (name, body), scope) =
   let jname = tojulia_var(name, scope),
       uniquejname = Symbol(jname, gensym()),
       macroname = Symbol("@", uniquejname),
-      newmacro = :(macro $(uniquejname)()
-         esc(JiL.tojulia($(tojulia(list(:quote, body), scope)), JiL.global_scope))
+      newmacro = :(macro $(uniquejname)(__scope__)
+         esc($tojulia_toplevel($(tojulia(list(:quote, body), scope)), __scope__))
       end)
     #debug_lisp_to_julia && println(" => ", newmacro)
-    add_binding!(name, JiLSymbolMacro(macroname, scope, body, newmacro), scope)
+    add_binding!(name, JiLSymbolMacro(macroname, scope, body), scope)
     scope isa ModuleScope ?
       Expr(:toplevel, newmacro, :($jname = $macroname)) :
       (lift!(newmacro, scope); :nothing)
