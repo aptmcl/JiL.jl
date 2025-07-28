@@ -76,6 +76,15 @@ Base.Iterators.drop(x::Cons, n::Integer) = n == 0 ? x : drop(x.tail, n-1)
 Base.iterate(l::List, ::Nil) = nothing
 Base.iterate(l::List, state::Cons = l) = state.head, state.tail
 
+Base.reverse(l::Nil{T}) where {T} = l
+Base.reverse(l::Cons{T}) where {T} = 
+  let lr = Nil{T}()
+    for e in l
+      lr = Cons(e, lr)
+    end
+    lr
+  end
+
 import Base.==
 ==(x::Nil, y::Nil) = true
 ==(x::Cons, y::Cons) = (x.head == y.head) && (x.tail == y.tail)
@@ -125,6 +134,9 @@ Base.last(l::Cons) =
     last(l.tail)
 
 Base.map(f::Base.Callable, lst::List) = list(f(e) for e in lst)
+Base.map(f::Base.Callable, lst1::List, lst2::List) = list(f(e1, e2) for (e1, e2) in zip(lst1, lst2))
+Base.map(f::Base.Callable, lst1::List, lst2::List, lst3::List) = list(f(e1, e2, e3) for (e1, e2, e3) in zip(lst1, lst2, lst3))
+Base.map(f::Base.Callable, lst1::List, lst2::List, lst3::List, lst4::List) = list(f(e1, e2, e3, e4) for (e1, e2, e3, e4) in zip(lst1, lst2, lst3, lst4))
 Base.filter(f::Function, lst::List) = list(e for e in lst if f(e))
 
 # This amounts to type piracy, so let's avoid it.
