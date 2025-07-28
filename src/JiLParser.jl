@@ -9,7 +9,7 @@ const END_OF_FILE = Symbol("THIS IS THE END OF FILE")
 
 @kwdef mutable struct JiLIO <: IO
     input::String
-    shared::Dict=Dict()
+    shared::Dict{Int, Any}=Dict{Int, Any}()
     sharedSyntax::Bool=false
     pushedToken=nothing
     pushedChar::Char=NULL_CHAR
@@ -78,7 +78,12 @@ readTail(dotOkP, io::JiLIO) =
         end
       end
     elseif token == DOT
-      error("'.' immediately after '('")
+      #error("'.' immediately after '('")
+      # Special treatment of (. inst field)
+      let car = read(nil, io),
+          cdr = readTail(true, io)
+        cons(:(.), cons(car, cdr))
+      end
     else
       pushToken(token, io)
       let car = read(nil, io),
@@ -140,29 +145,48 @@ readToken(io::JiLIO) =
 
 readDispatch(io::JiLIO) =
   let dispatch = readChar(io)
-    if dispatch == 'S'
+    if dispatch == '\\' # Character
+      readChar(io)
+    elseif dispatch == 'b' # binary
+      readNumberOrSymbol(readChar(io), io, 2)
+    elseif dispatch == 'o' # octal
+      readNumberOrSymbol(readChar(io), io, 8)
+    elseif dispatch == 'd' # decimal
+      readNumberOrSymbol(readChar(io), io, 10)
+    elseif dispatch == 'x' # hexadecimal
+      readNumberOrSymbol(readChar(io), io, 16)
+    elseif dispatch == 'e' # exact
+      reduce_fraction(rationalize(read(nil, io)))
+    elseif dispatch == 'i' # inexact
+      read(nil, io) # HACK: This needs to be made inexact
+    elseif dispatch == 't' # Just to directly handle #t and #f
+      true
+    elseif dispatch == 'f'
+      false
+    elseif dispatch == 'S'
       readStructure()
-    elseif dispatch == '('
+    elseif dispatch == '(' # Vector
       let elems = readTail(false, io)
-        makeVectorFromList(elems)
+        vcat(elems...)
       end
     else
       pushChar(dispatch, io)
       let sharedSyntax = true,
-          key = readToken(io),
-          termChar = popChar(io)
+          key = string(readToken(io)),
+          termChar = key[end],
+          key = parse(Int, key[1:end-1])
         if termChar == '='
           sharedSyntax = false
-          shared = read(nil, JiLIO)
-          if !(key in io.sharedTable)
-            io.sharedTable[key] = shared
+          shared = read(nil, io)
+          if !(haskey(io.shared, key))
+            io.shared[key] = shared
           else
            error("Duplicate read definition name #" + key)
           end
           shared
         elseif termChar == '#'
           sharedSyntax = false
-          io.sharedTable[key]
+          io.shared[key]
         else
           error("Unknown terminating circle dispatch char #$dispatch$termChar")
         end
@@ -200,7 +224,24 @@ readComment(io::JiLIO) =
     while (!eof(io) && (ch = readChar(io)) != '\n') end
   end
 
-readNumberOrSymbol(ch, io::JiLIO) =
+const complex_rectangular_regex = r"[+-]?(((\d+\.\d*|\d*\.\d+|\d+)[+-])?((\d+\.\d*|\d*\.\d+|\d+)i|i(\d+\.\d*|\d*\.\d+|\d+)|i))"
+const complex_polar_regex = r"[+-]?((\d+\.\d*|\d*\.\d+|\d+)?e(\([+-]?|[+-]?\()((\d+\.\d*|\d*\.\d+|\d+)i|i(\d+\.\d*|\d*\.\d+|\d+)|i)\))"
+#const float_regex = r"^(([+-]?(?:\d*(?:\.(?=\d)?)?\d*))(?:(?:(?<=\d)[Ee])?((?2)))(?<=\d))?$"
+const float_regex = r"^[+-]?((\d+\.\d*)|(\.\d+)|(\d+))([esfdlESFDL][+-]?\d+)?$"
+const integer_regex = r"^[+-]?\d+$"
+const fraction_regex = r"^([+-]?\d+)/(\d+)$"
+
+const scheme_julia_translations = Dict(
+  "true"=>true, "#t"=>true, 
+  "false"=>false, "#f"=>false,
+  "+inf.0"=>Inf,
+  "-inf.0"=>-Inf,
+  "+nan.0"=>NaN,
+  "-nan.0"=>NaN)
+
+reduce_fraction(f) = denominator(f) == 1 ? numerator(f) : f
+
+readNumberOrSymbol(ch, io::JiLIO, base=10) =
   let c = ch,
       buffer = []
     while (true)
@@ -214,23 +255,29 @@ readNumberOrSymbol(ch, io::JiLIO) =
     if c == '.' && length(buffer) == 1
       DOT
     else
-      let token = string(buffer...)
-        if c in ".+-0123456789"
-          try
-            parse(Int, token)
-          catch e
-            try
+      let token = string(buffer...),
+          val = get(scheme_julia_translations, token, missing),
+          m = nothing
+        if ismissing(val)
+          if c in ".+-0123456789"
+            if !isnothing(match(integer_regex, token))
+              parse(Int, token, base=base)
+            elseif (m = match(fraction_regex, token); !isnothing(m))
+              reduce_fraction(parse(Int, m[1])//parse(Int, m[2]))
+            elseif !isnothing(match(float_regex, token))
               parse(Float64, token)
-            catch e
-              Symbol(token)
+            elseif !isnothing(match(complex_rectangular_regex, token))
+              error("Must handle the complex number '$token'. See https://github.com/JuliaLang/julia/issues/22250")
+            elseif !isnothing(match(complex_polar_regex, token))
+              error("Must handle the complex number '$token'. See https://github.com/JuliaLang/julia/issues/22250")
+            else
+                Symbol(token)
             end
+          else
+            Symbol(token)
           end
-        elseif token == "true"
-          true
-        elseif token == "false"
-          false
         else
-          Symbol(token)
+          val
         end
       end
     end
