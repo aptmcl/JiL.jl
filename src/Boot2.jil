@@ -1,12 +1,87 @@
 #lang:jil
 
-(macro cond ((... clauses))
-  (let ((clauses (list (... clauses))))
-    (if (null? clauses)
-      'false
-      `(if ,(if (eq? (caar clauses) 'else) 'true (caar clauses))
-            (begin ,@(cdar clauses))
-            (cond ,@(cdr clauses))))))
+;;(macro cond clauses
+;;  (if (null? clauses)
+;;    'false
+;;    `(if ,(if (eq? (caar clauses) 'else) 'true (caar clauses))
+;;        (begin ,@(cdar clauses))
+;;        (cond ,@(cdr clauses)))))
+
+(macro cond clauses
+  (if (null? clauses)
+    'false
+    (let ((clause (car clauses))
+          (rest (cdr clauses)))
+      (if (eq? (car clause) 'else)
+        `(begin ,@(cdr clause))
+        ;; (test => function)
+        (if (and (= (length clause) 3)
+                 (eq? (cadr clause) '=>))
+          (let ((value (gensym)))
+            `(let ((,value ,(car clause)))
+               (if (! (== ,value false)) ;;To avoid Julia's TypeError: non-boolean used in boolean context
+                 (,(caddr clause) ,value)
+                 (cond ,@rest))))
+          (if (null? (cdr clause))
+            `(if ,(car clause)
+               ,(car clause)
+               (cond ,@rest))
+            `(if ,(car clause)
+               (begin ,@(cdr clause))
+               (cond ,@rest))))))))
+
+(macro case (key . clauses)
+  (let ((val (gensym)))
+    `(let ((,val ,key))
+       (cond ,@(map (lambda (clause)
+                      (if (eq? (car clause) 'else)
+                        (if (eq? (cadr clause) '=>)
+                          `(else (,(caddr clause) ,val))
+                          clause)
+                        `((or ,@(map (lambda (k) `(eqv? ,val ',k)) (car clause)))
+                          ,@(cdr clause))))
+                    clauses)))))
+
+(macro when (test . body)
+  `(if ,test
+     (begin
+       ,@body)
+     false))
+
+(macro unless (test . body)
+  `(if ,test
+     false
+     (begin
+       ,@body)))
+
+(macro letrec (bindings . body)
+  `(let ,(map (lambda (binding) `(,(car binding) missing)) bindings)
+     ,@(map (lambda (binding) `(set! ,(car binding) ,(cadr binding))) bindings)
+     ,@body))
+
+;;letrec* is identical to letrec but forces sequential binding, while in letrec that order is not specified.
+(macro letrec* (bindings . body)
+  `(let ,(map (lambda (binding) `(,(car binding) missing)) bindings)
+     ,@(map (lambda (binding) `(set! ,(car binding) ,(cadr binding))) bindings)
+     ,@body))
+
+(macro do (bindings test&result . body)
+  (let ((vars (map car bindings))
+        (inits (map cadr bindings))
+        (steps (map (lambda (b) (if (empty? (cddr b)) (car b) (caddr b))) bindings))
+        (test (car test&result))
+        (result (cdr test&result)))
+    `(let ,(map list vars inits)
+       (letrec ((loop
+                  (lambda ()
+                    (if ,test
+                      (begin ,@result)
+                      (begin
+                        ,@body
+                        (set! ,vars (values ,@steps))
+                        (loop))))))
+         (loop)))))
+
 
 ;Scheme-like define
 (def (maybe-wrap-in-begin form extra-forms)
@@ -40,4 +115,109 @@
       `(macro ,name ,params
          ,(maybe-convert-last-to-list params body))))
 
-(export define defmacro cond)
+(def (apply f args)
+  (f (... args)))
+
+(def (display obj) (print obj))
+(def (newline) (println))
+
+(export cond case when unless letrec letrec* do 
+        define defmacro apply display newline)
+
+
+(export promise make-promise promise? delay force delay-force)
+
+(mutable-struct promise
+  function 
+  cached?
+  cached-value)
+
+(def (promise? val) (isa val promise))
+
+(def (make-promise val) 
+  (if (promise? val)
+    val
+    (promise (lambda () nothing) true val)))
+
+(macro delay (expr)
+  `(promise (lambda () ,expr)
+            false
+            missing))
+
+(def (force val)
+  (if (promise? val)
+    (if (getfield val 'cached?)
+      (getfield val 'cached-value)
+      (let ((forced ((getfield val 'function))))
+        (setfield! val 'cached-value forced)
+        (setfield! val 'cached? true)
+        (setfield! val 'function missing)
+        forced))
+    val))
+
+;; WARN: Non-tail-call version
+(macro delay-force (expr)
+  `(delay (force ,expr)))
+
+
+;; Multiple values
+(export define-values values)
+
+(def (values (... args)) (tuple (... args)))
+
+(macro define-values (vars expr)
+  (let ((gens (map gensym vars)))
+  `(begin
+     ,@(map (lambda (var) `(def ,var missing)) vars)
+     (let-values ((,gens ,expr))
+       ,@(map (lambda (var gen) `(set! ,var ,gen)) vars gens)))))
+
+(export equal?)
+(def (equal? x y)
+  (cond ((eqv? x y))
+        ((and (pair? x) (pair? y))
+         (and (equal? (car x) (car y))
+              (equal? (cdr x) (cdr y))))
+        (else false)))
+
+;;;; case-lambda       
+;;(macro (case-lambda . choices)
+;;  `(lambda args
+;;     (case (length args)
+;;       ,@(map (lambda (choice)
+;;		            (if (or (symbol? (car choice))
+;;		            	(negative? (length (car choice))))
+;;		                `(else (apply (lambda ,(car choice) ,@(cdr choice)) args))
+;;		                `((,(length (car choice))) 
+;;		                  (apply (lambda ,(car choice) ,@(cdr choice)) args))))
+;;	            choices))))
+;;
+;; records
+;;(define-macro (define-record-type type make ? . fields)
+;;  (let ((obj (gensym))
+;;	      (typ (gensym))
+;;      	(args (map (lambda (field)
+;;		                 (values (list 'quote (car field))
+;;                  			     (let ((par (memq (car field) (cdr make))))
+;;			                          (and (pair? par) (car par)))))
+;;          	  fields)))
+;;    `(begin
+;;       (define (,? ,obj)
+;;     	   (and (let? ,obj)
+;;	            (eq? (let-ref ,obj ',typ) ',type)))
+;;       (define ,make
+;;         (inlet ',typ ',type ,@args))
+;;       ,@(map (lambda (field)
+;;        	      (when (pair? field)
+;;        	        (if (null? (cdr field))
+;;        		        (values)
+;;        		        (if (null? (cddr field))
+;;        		          `(define (,(cadr field) ,obj)
+;;        			        (let-ref ,obj ',(car field)))
+;;        		            `(begin
+;;        			             (define (,(cadr field) ,obj)
+;;        			               (let-ref ,obj ',(car field)))
+;;        			             (define (,(caddr field) ,obj val)
+;;        			               (let-set! ,obj ',(car field) val)))))))
+;;          	  fields)
+;;       ',type)))

@@ -4,25 +4,62 @@
 
 ;;These definitions need to be loaded first
 (export
+  boolean?
+  bytevector?
+  char?
+  port?
+  procedure?
+  string?
+  symbol?
+  vector?
   list? pair? atom? symbol?
   null?
   empty?
+  proper-list?
+  list*
   car cdr
   caar cadr cdar cddr
-  caaar caadr cadar caddr cdaar cdadr cddar cdddr
+  caaar caadr cadar caddr cdaar cdadr cddar cdddr caaaar
+  caaadr caadar caaddr cadaar cadadr caddar cadddr cdaaar cdaadr cdadar cdaddr cddaar cddadr cdddar cddddr
+  list-ref
   append
   eq?
+  eqv?
   not
   as-list)
 
-(def (list? obj) (or (isa obj Nil) (isa obj Cons)))
+;; 3.2. Disjointness of types
+;; No object satisfies more than one of the following predicates:
+(def (boolean? obj) (isa obj Bool))
+(def (bytevector? obj) (isa obj Vector{Unsigned}))
+(def (char? obj) (isa obj Char))
+;;eof-object?
+(def (null? lst) (isa lst Nil))
 (def (pair? obj) (or (isa obj Pair) (isa obj Cons)))
-(def (atom? obj) (not (or (isa obj Pair) (isa obj List))))
+(def (port? obj) (isa obj IOStream))
+(def (procedure? obj) (isa obj Function))
+(def (string? obj) (isa obj AbstractString))
 (def (symbol? obj) (isa obj Symbol))
-(def null? isempty)
-(def empty? isempty)
-(def car head)
-(def cdr tail)
+(def (vector? obj) (isa obj Vector))
+
+;; Other predicates
+(def (list? obj) (or (isa obj Nil) (isa obj Cons)))
+(def (atom? obj) (not (or (isa obj Pair) (isa obj List))))
+(def (proper-list? lst)
+  (or (null? lst)
+      (and (pair? lst)
+           (proper-list? (cdr lst)))))
+(def (list* . args)
+  (begin
+    (def (process args)
+      (if (null? (cdr args))
+        (car args)
+        (cons (car args) (process (cdr args)))))
+    (process args)))
+
+
+(def (car c) (head c))
+(def (cdr c) (tail c))
 (def (caar c) (car (car c)))
 (def (cadr c) (car (cdr c)))
 (def (cdar c) (cdr (car c)))
@@ -35,9 +72,43 @@
 (def (cdadr c) (cdr (car (cdr c))))
 (def (cddar c) (cdr (cdr (car c))))
 (def (cdddr c) (cdr (cdr (cdr c))))
-(def append cat)
-(def eq? ===)
-(def not !)
+(def (caaaar c) (car (car (car (car c)))))
+(def (caaadr c) (car (car (car (cdr c)))))
+(def (caadar c) (car (car (cdr (car c)))))
+(def (caaddr c) (car (car (cdr (cdr c)))))
+(def (cadaar c) (car (cdr (car (car c)))))
+(def (cadadr c) (car (cdr (car (cdr c)))))
+(def (caddar c) (car (cdr (cdr (car c)))))
+(def (cadddr c) (car (cdr (cdr (cdr c)))))
+(def (cdaaar c) (cdr (car (car (car c)))))
+(def (cdaadr c) (cdr (car (car (cdr c)))))
+(def (cdadar c) (cdr (car (cdr (car c)))))
+(def (cdaddr c) (cdr (car (cdr (cdr c)))))
+(def (cddaar c) (cdr (cdr (car (car c)))))
+(def (cddadr c) (cdr (cdr (car (cdr c)))))
+(def (cdddar c) (cdr (cdr (cdr (car c)))))
+(def (cddddr c) (cdr (cdr (cdr (cdr c)))))
+
+(def (list-ref l i) (getindex l (+ i 1)))
+
+
+(def (append . lsts)
+  (begin
+    (def (append2 a b)
+      (if (null? a)
+        b
+        (cons (car a) (append2 (cdr a) b))))
+    (def (process lsts)
+      (if (null? lsts)
+        (list)
+        (if (null? (cdr lsts))
+          (car lsts)
+          (append2 (car lsts) (process (cdr lsts))))))
+    (process lsts)))
+(def (eq? a b) (or (=== a b) (and (isa a Nil) (isa b Nil)))) ;; Nil{Symbol} is not === to, e.g., Nil{String}
+(def (eqv? a b) (and (=== (typeof a) (typeof b)) (== a b)))
+(def (not b) (! b))
+(def (empty? c) (isempty c))
 
 (def (as-list v)
   (if (list? v)
@@ -48,3 +119,155 @@
         (cons (car v)
               (as-list (cdr v)))
         (list (list (quote ...) v))))))
+
+(export assq assv assoc memq memv member)
+
+(def (assq k alist)
+  (if (null? alist)
+    false
+    (if (eq? k (caar alist))
+      (car alist)
+      (assq k (cdr alist)))))
+
+(def (assv k alist)
+  (if (null? alist)
+    false
+    (if (eqv? k (caar alist))
+      (car alist)
+      (assv k (cdr alist)))))
+
+(def (assoc k alist (kw compare equal?))
+  (if (null? alist)
+    false
+    (if (compare k (caar alist))
+      (car alist)
+      (assoc k (cdr alist) compare))))
+
+(def (memq k list)
+  (if (null? list)
+    false
+    (if (eq? k (car list))
+      list
+      (memq k (cdr list)))))
+
+(def (memv k list)
+  (if (null? list)
+    false
+    (if (eqv? k (car list))
+      list
+      (memv k (cdr list)))))
+
+(def (member k list (kw compare equal?))
+  (if (null? list)
+    false
+    (if (compare k (car list))
+      list
+      (member k (cdr list) compare))))
+
+;;Math
+(export ;;+nan.0 -nan.0 +inf.0 -inf.0 These are now literals
+        zero? positive? negative? odd? even? 
+        real? complex? rational? integer? 
+        exact? inexact? exact-integer?
+        finite? infinite? nan? 
+        exact-integer-sqrt exact
+        floor/ floor-quotient floor-remainder
+        truncate/ truncate-quotient truncate-remainder
+        floor ceiling truncate round 
+        square expt
+        =)
+
+;;This needs to be discussed
+;;(module-def Base (/ x) (/ 1 x))
+;;(module-def Base (/ (:: x Int)) (// 1 x))
+;;(defconst +nan.0 NaN)
+;;(defconst -nan.0 NaN)
+;;(defconst +inf.0 Inf)
+;;(defconst -inf.0 (- Inf))
+(def (zero? x) (iszero x))
+(def (positive? x) (> x 0))
+(def (negative? x) (< x 0))
+(def (odd? n) (isodd n))
+(def (even? n) (iseven n))
+;; In Scheme we have the following implications
+;; integer? => rational? => real? => complex?
+(def (integer? obj) (isinteger obj))
+(def (rational? obj) (or (isa obj Rational) (isa obj Integer)))
+(def (real? obj) (isreal obj))
+(def (complex? obj) (isa obj Number))
+(def (number? obj) (isa obj Number))
+(def (exact? obj) (or (isa obj Integer) (isa obj Rational))) ;; Not exactly correct ...
+(def (inexact? obj) (isa obj AbstractFloat))
+(def (exact-integer? obj) (isa obj Integer))
+(def (finite? obj) (isfinite obj))
+(def (infinite? obj) (isinf obj))
+(def (nan? obj) (isnan obj))
+
+(def (exact-integer-sqrt n)
+  (let ((r (isqrt n)))
+    (tuple r (- n (* r r)))))
+
+(def (exact x) (Int x)) ;; Incorrect
+
+(def (floor/ n1 n2) (fldmod n1 n2))
+(def (floor-quotient n1 n2) (fld n1 n2))
+(def (floor-remainder n1 n2) (mod n1 n2))
+(def (truncate/ n1 n2) (divrem n1 n2))
+(def (truncate-quotient n1 n2) (div n1 n2))
+(def (truncate-remainder n1 n2) (rem n1 n2))
+
+(def (floor n) ((. Base floor) Int n))
+(def (ceiling n) (ceil Int n))
+(def (truncate n) (trunc Int n))
+(def (round n) ((. Base round) Int n))
+
+(def (expt b e) (^ b e))
+(def (square n) (* n n))
+
+(module-def Base (rationalize x y) (julia "Base.rationalize(x, tol=y)"))
+
+
+(def (= a b) (== a b))
+
+;; 6.8 Vectors
+(def (make-vector k) (julia "Vector{Any}(undef, k)"))
+(def (make-vector k init) (julia "Vector{Any}([init for i in 1:k])"))
+(def (vector (... args)) ((. Base vect) (... args)))
+(def (vector-length v) (length v))
+(def (vector-ref v i) (getindex v (+ i 1)))
+(def (vector-set! v i val) (setindex! v val (+ i 1)))
+(def (vector->list vector) (list (... vector)))
+(def (vector->list vector start) (list (... (julia "vector[start+1:end]"))))
+(def (vector->list vector start stop) (list (... (julia "vector[start+1:stop]"))))
+(def (list->vector list) ((. Base vect) (... list)))
+(def (vector->string vector) (string (... vector)))
+(def (vector->string vector start) (string (... (julia "vector[start+1:end]"))))
+(def (vector->string vector start stop) (string (... (julia "vector[start+1:stop]"))))
+(def (string->vector string) ((. Base vect) (... string)))
+(def (string->vector string start) (julia "[string[start+1:end]...]"))
+(def (string->vector string start stop) (julia "[string[start+1:stop]...]"))
+(def (vector-copy vector) (julia "vector[1:end]"))
+(def (vector-copy vector start) (julia "vector[start+1:end]"))
+(def (vector-copy vector start stop) (julia "vector[start+1:stop]"))
+(def (vector-copy! to at from) (copyto! to (+ at 1) from 1 (- (length to) at)))
+(def (vector-copy! to at from start) (copyto! to (+ at 1) from (+ start 1) (- (length to) at)))
+(def (vector-copy! to at from start stop) (copyto! to (+ at 1) from (+ start 1) (- stop start)))
+(def (vector-fill! vector fill) (fill! vector fill))
+(def (vector-fill! vector fill start) (julia "fill!(@view(a[start+1,end]), fill)"))
+(def (vector-fill! vector fill start stop) (julia "fill!(@view(a[start+1,stop]), fill)"))
+(export make-vector vector vector-length vector-ref vector-set! vector->list list->vector vector->string string->vector vector-copy vector-copy!)
+
+
+;; Strings
+(export string=? string->symbol symbol->string string->number string-ci=?)
+
+;; Needs to be generalized
+(def (string=? s1 s2) (== s1 s2))
+
+(def (string->symbol s) (Symbol s))
+
+(def (symbol->string s) (String s))
+
+(def (string->number s (kw base 10)) (@something (tryparse Int s (kw base base)) (tryparse Float64 s)))
+
+(def (string-ci=? s1 s2) (julia "Unicode.isequal_normalized(s1, s2, casefold=true)"))
