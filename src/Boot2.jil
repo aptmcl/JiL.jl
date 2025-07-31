@@ -7,6 +7,8 @@
 ;;        (begin ,@(cdar clauses))
 ;;        (cond ,@(cdr clauses)))))
 
+;;Redefined to fully support Scheme's cond:
+
 (macro cond clauses
   (if (null? clauses)
     'false
@@ -23,9 +25,11 @@
                  (,(caddr clause) ,value)
                  (cond ,@rest))))
           (if (null? (cdr clause))
-            `(if ,(car clause)
-               ,(car clause)
-               (cond ,@rest))
+            (let ((value (gensym)))
+              `(let ((,value ,(car clause)))
+                 (if (! (== ,value false)) ;;To avoid Julia's TypeError: non-boolean used in boolean context
+                   ,value
+                   (cond ,@rest))))
             `(if ,(car clause)
                (begin ,@(cdr clause))
                (cond ,@rest))))))))

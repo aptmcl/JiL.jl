@@ -216,13 +216,13 @@ using JiL: truncate, round, floor
     @test jilEval"(let ((name 'a)) `(list ,name ',name))" == jilEval"'(list a (quote a))"
     @test jilEval"`(a ,(+ 1 2) ,@(map abs '(4 -5 6)) b))" == jilEval"'(a 3 4 5 6 b)"
     @test jilEval"`((foo ,(- 10 3)) ,@(cdr '(c)) . ,(car '(cons)))" == jilEval"'((foo 7) . cons)"
-    #@test jilEval"`#(10 5 ,(sqrt 4) ,@(map sqrt '(16 9)) 8)" == jilEval"'#(10 5 2 4 3 8)" Backquote needs to handle vectors
+    @test jilEval"`#(10 5 ,(sqrt 4) ,@(map sqrt '(16 9)) 8)" == jilEval"'#(10 5 2 4 3 8)"
     @test jilEval"(let ((foo '(foo bar)) (@baz 'baz))
                     `(list ,@foo , @baz))" == jilEval"'(list foo bar baz)"
-    #@test jilEval"`(a `(b ,(+ 1 2) ,(foo ,(+ 1 3) d) e) f)" == jilEval"'(a `(b ,(+ 1 2) ,(foo 4 d) e) f)" Backquote needs to be improved to handle double backquote
-    #@test jilEval"(let ((name1 'x)  Backquote needs to be improved to handle double backquote
-    #                    (name2 'y))
-    #                `(a `(b ,,name1 ,',name2 d) e))" == jilEval"'(a `(b ,x ,'y d) e)"
+    @test jilEval"`(a `(b ,(+ 1 2) ,(foo ,(+ 1 3) d) e) f)" == jilEval"'(a `(b ,(+ 1 2) ,(foo 4 d) e) f)"
+    @test jilEval"(let ((name1 'x)
+                        (name2 'y))
+                    `(a `(b ,,name1 ,',name2 d) e))" == jilEval"'(a `(b ,x ,'y d) e)"
     @test jilEval"(quasiquote (list (unquote (+ 1 2)) 4))" == jilEval"'(list 3 4)"
     @test jilEval"'(quasiquote (list (unquote (+ 1 2)) 4))" == jilEval"'`(list ,(+ 1 2) 4)"
     @test jilEval"(let ((x 5))
