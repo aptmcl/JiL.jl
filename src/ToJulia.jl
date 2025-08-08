@@ -767,3 +767,14 @@ a kind of "inline assembly".
 
 tojulia(::Val{:julia}, (str,), scope) =
   Meta.parse(str)
+
+#=
+Scheme's try-catch:
+=#
+
+tojulia(::Val{:try}, (expr, var, catch_expr), scope) =
+  Expr(:try, 
+       tojulia(expr, scope),
+       tojulia_var(var, scope),
+       Expr(:block, # Yes, the block is needed.
+            tojulia(catch_expr, new_local_scope([var], [missing], scope))))

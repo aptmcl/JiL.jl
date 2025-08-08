@@ -2,6 +2,7 @@ module JiL
 using Unicode
 
 export debug_lisp_to_julia, install_jil_parser, restore_julia_parser, tojulia, @jil_str, @jilm_str, @jilEval_str, @julia_str
+include("Runtime.jl")
 include("List.jl")
 include("ToJulia.jl")
 include("JiLParser.jl")

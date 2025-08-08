@@ -225,3 +225,28 @@
 ;;        			               (let-set! ,obj ',(car field) val)))))))
 ;;          	  fields)
 ;;       ',type)))
+
+;; (parameterize ((radix 2) (print-length 10))
+;;   (f 12))
+;; 
+;; (with (lambda () (f 12)) radix 2 print-length 10)
+
+(export parameterize)
+
+(macro parameterize (bindings . body)
+  (if (null? bindings)
+    `(begin ,@body)
+    (let ((binding (car bindings)))
+      `(with (lambda () (parameterize ,(cdr bindings) ,@body)) ,(car binding) ,(cadr binding)))))
+
+
+(export guard raise)
+
+(macro guard (var&cond-clauses body)
+  (let ((var (car var&cond-clauses))
+        (cond-clauses (cdr var&cond-clauses)))
+    `(try ,body
+          ,var
+          (cond ,@cond-clauses))))
+
+(def (raise e) (throw e))

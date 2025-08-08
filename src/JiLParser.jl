@@ -169,6 +169,8 @@ readDispatch(io::JiLIO) =
       let elems = readTail(false, io)
         vcat(elems...)
       end
+    elseif dispatch == '\'' # Syntax
+      list(Symbol("syntax"), read(nil, io))
     else
       pushChar(dispatch, io)
       let sharedSyntax = true,

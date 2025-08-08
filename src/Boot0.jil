@@ -226,6 +226,7 @@
 
 (module-def Base (rationalize x y) (julia "Base.rationalize(x, tol=y)"))
 
+(module-def Base (<= a b (... cs)) (and (<= a b) (<= b (... cs))))
 
 (def (= a b) (== a b))
 
@@ -259,7 +260,7 @@
 
 
 ;; Strings
-(export string=? string->symbol symbol->string string->number string-ci=?)
+(export string=? string->symbol symbol->string string->number number->string string-ci=?)
 
 ;; Needs to be generalized
 (def (string=? s1 s2) (== s1 s2))
@@ -270,4 +271,12 @@
 
 (def (string->number s (kw base 10)) (@something (tryparse Int s (kw base base)) (tryparse Float64 s)))
 
+(def (number->string n (kw base 10)) (string n (kw base base)))
+
 (def (string-ci=? s1 s2) (julia "Unicode.isequal_normalized(s1, s2, casefold=true)"))
+
+;; Parameters
+(export make-parameter)
+
+(def (make-parameter init (kw converter identity))
+  (ThreadLocalParameter (converter init)))
