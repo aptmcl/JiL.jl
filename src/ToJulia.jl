@@ -498,7 +498,7 @@ tojulia(::Val{:macro}, (name, params, body), scope) =
       (juparams, body, body_scope) = tojulia_parameters(params, body, scope),
 #      mbody = :($tojulia_toplevel($(tojulia(body, scope)), __module__)),
 #      newmacro = :(macro $(uniquejname)($(juparams...))
-      mbody = :($tojulia_toplevel($(tojulia(body, scope)), __scope__)),
+      mbody = :($tojulia_toplevel($(tojulia(body, body_scope)), __scope__)),
       newmacro = :(macro $(uniquejname)(__scope__, $(juparams...))
          esc($mbody)
       end)
