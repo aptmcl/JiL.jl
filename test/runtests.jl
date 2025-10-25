@@ -33,9 +33,7 @@ using JiL: truncate, round, floor
                           end
                         end"
     @test jil"(def (quux x (... args)) (tuple x (... args)))" ==
-        julia"quux(x, args...) = begin
-                tuple(x, args...)
-             end"
+        julia"quux(x, args...) = (x, args...)"
 
     @test jilEval"(define x 28)" == 28
     @test jilEval"(+ 3 4)" == 7
@@ -489,14 +487,17 @@ using JiL: truncate, round, floor
 
     @test jilEval"""(string->vector "ABC")""" == jilEval"'#(#\A #\B #\C)"
     @test jilEval"(vector->string #(#\1 #\2 #\3))" == "123"
+    @test jilEval"""(begin
+                      (macro swap (x y)
+                        `(let ((temp ,x))
+                           (set! ,x ,y)
+                           (set! ,y temp)))
+                      (macro foo (a b)
+                        (swap a b)
+                        `(list ,a ,b))
+                      (foo 1 2))""" == jilEval"'(2 1)"
 
 end
-#=
-
-
-
-=#
-#=
 #=
 (define range
 (case-lambda
@@ -513,6 +514,7 @@ end
 (define first car)
 (first '(1 2))" == 1
 =#
+
 #=
 (define-record-type <pare>
 (kons x y)
@@ -541,7 +543,6 @@ y" == (a . 4)
 (list-set! '(0 1 2) 1 "oops")" == error ; constant list
 =#
 #=
-
 (define a '(1 8 2 8)) ; a may be immutable
 (define b (list-copy a))
 (set-car! b 3) ; b is mutable
@@ -569,8 +570,4 @@ b" == "a12de"
 b" == #(3 8 2 8)
 (define c (vector-copy b 1 3))
 c" == #(8 2)
-=#
-#=
-=#
-end
 =#
