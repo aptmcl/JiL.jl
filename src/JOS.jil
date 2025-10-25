@@ -1,0 +1,171 @@
+#lang:jil
+
+#|
+JiL maps almost directly to Julia. Despite the syntatical differences, the semantics are very similar, making it easy for Julia developers to adopt JiL.
+However, JiL introduces additional features and abstractions that are not present in Julia and that enhance the language's expressiveness and flexibility.
+The most important one is a CLOS-like object system, which we call JiL Object System, a.k.a., JOS.
+
+One important consideration is that we cannot map directly JOS to Julia's type system. It just doesn't fit. So, we need a completely orthogonal class system.
+Maybe we can map the generic function stuff to Julia's multiple dispatch, but I'm not even sure about that.
+|#
+
+(export defclass defgeneric defmethod new)
+
+(def (process-slot-options options) (begin (println options)
+  (if (null? options)
+    (list)
+    (cons `(def ,(case (car options) 
+                   ((:reader) 'reader)
+                   ((:writer) 'writer)
+                   ((:initform) 'initform)
+                   (else (error "Unknown slot option $(options)")))
+                ,(cadr options))
+          (process-slot-options (cddr options))))))
+
+(macro defclass (name supers slots)
+  (let ((slots (map (lambda (s)
+                      (if (pair? s)
+                        `(vect ,(car s) ,@(process-slot-options (cdr s)))
+                        s))
+                    slots)))
+                    (println slots)
+    `(@defclass ,name (vect ,@supers) (vect ,@slots))))
+
+(macro defgeneric (name params)
+  `(@defgeneric (,name ,@params)))
+
+(macro defmethod (name params form)
+  (let ((params (map (lambda (p) 
+                       (if (pair? p) `(:: ,(car p) ,(cadr p)) p)) params)))
+    `(@defmethod (def (,name ,@params) ,form))))
+
+(def is-instance is_instance)
+(def instance-class instance_class)
+(def instance-slots instance_slots)
+(def class-of class_of)
+(def depth-first-cpl depth_first_cpl)
+(def flavors-cpl flavors_cpl)
+(def loops-cpl loops_cpl)
+(def breath-first-cpl breath_first_cpl)
+(def slot-ref slot_ref)
+(def slot-set! slot_set!)
+(def lookup-slot-info lookup_slot_info) 
+(def class-name class_name) 
+(def class-direct-slots class_direct_slots) 
+(def class-slots class_slots) 
+(def class-direct-initializers class_direct_initializers) 
+(def class-initializers class_initializers) 
+(def class-direct-superclasses class_direct_superclasses) 
+(def class-cpl class_cpl) 
+(def generic-methods generic_methods) 
+(def method-specializers method_specializers) 
+(def method-procedure method_procedure) 
+(def new-class new_class)
+(def new-generic new_generic)
+(def new-method new_method)
+(def add-method! add_method!) 
+(def compute-apply-generic compute_apply_generic)
+(def compute-methods compute_methods)
+(def compute-is-method-more-specific compute_is_method_more_specific)
+(def compute-apply-methods compute_apply_methods)
+(def is-instance-of is_instance_of)
+(def allocate-instance allocate_instance)
+(def compute-cpl compute_cpl)
+(def compute-slots compute_slots)
+(def compute-initializers compute_initializers)
+(def compute-getter-and-setter compute_getter_and_setter)
+
+(export
+  is-instance
+  instance-class
+  instance-slots
+  class-of
+  depth-first-cpl
+  flavors-cpl
+  loops-cpl
+  breath-first-cpl
+  slot-ref
+  slot-set!
+  lookup-slot-info 
+  class-name 
+  class-direct-slots 
+  class-slots 
+  class-direct-initializers 
+  class-initializers 
+  class-direct-superclasses 
+  class-cpl 
+  generic-methods 
+  method-specializers 
+  method-procedure 
+  new-class
+  new-generic
+  new-method
+  add-method! 
+  compute-apply-generic
+  compute-methods
+  compute-is-method-more-specific
+  compute-apply-methods
+  is-instance-of
+  allocate-instance
+  compute-cpl
+  compute-slots
+  compute-initializers
+  compute-getter-and-setter)
+
+#|
+
+(defclass Shape () ())
+(defmethod print_object ((s Shape) io) (print io "<a shape>"))
+(defclass Device () ())
+
+(defgeneric draw (shape device))
+
+(defclass Line (Shape)
+  (from to))
+(defclass Circle (Shape)
+  (center radius))
+
+(defclass Screen (Device) ())
+(defclass Printer (Device) ())
+
+(defmethod draw ((shape Line) (device Screen)) (println "Drawing a Line on Screen"))
+(defmethod draw ((shape Circle) (device Screen)) (println "Drawing a Circle on Screen"))
+(defmethod draw ((shape Line) (device Printer)) (println "Drawing a Line on Printer"))
+(defmethod draw ((shape Circle) (device Printer)) (println "Drawing a Circle on Printer"))
+
+(let ((devices (list (new Screen) (new Printer)))
+      (shapes (list (new Line) (new Circle))))
+  (for (device devices)
+    (for (shape shapes)
+      (draw shape device))))
+
+(generic-methods draw)
+
+(defclass ColorMixin () 
+  ((color :reader get-color :writer set-color!)))
+(defmethod draw ((s ColorMixin) (d Device))
+  (let ((previous_color (get-device-color d)))
+    (set-device-color! d (get-color s))
+    (call_next_method) ;; This is lexically defined, so not call-next-method
+    (set-device-color! d previous_color)))
+
+(defclass ColoredLine (ColorMixin Line) ())
+(defclass ColoredCircle (ColorMixin Circle) ())
+
+(class-direct-superclasses ColoredCircle)
+
+
+(defclass ColoredPrinter (Printer) 
+  ((ink :initform 'black :reader get-device-color :writer -set-device-color!)))
+
+(defmethod set-device-color! ((d ColoredPrinter) color)
+  (begin
+    (println "Changing printer ink color to " color)
+    (-set-device-color! d color)))
+
+(let ((shapes (list (new Line) (new ColoredCircle (kw color 'red)) (new ColoredLine (kw color 'blue))))
+      (printer (new ColoredPrinter (kw ink 'black))))
+  (for (shape shapes)
+    (draw shape printer)))
+
+|#

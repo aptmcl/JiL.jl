@@ -7,11 +7,13 @@ include("List.jl")
 include("ToJulia.jl")
 include("JiLParser.jl")
 include("LangParser.jl")
+include("JOS.jl")    # The JiL Object System, written in Julia
 
 install_jil_parser() # Let's have the parser ready
 include("Boot0.jil") # Primitive operations (car, cdr, null?, defmacro, etc)
 include("Boot1.jil") # Useful macros that use the primitives (cond, macroexpand, etc)
 include("Boot2.jil") # More useful macros (define, when, etc)
+include("JOS.jil")   # The JiL Object System, the wrappers written in JiL
 restore_julia_parser()
 
 macro jil_str(str)
