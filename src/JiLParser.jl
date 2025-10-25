@@ -163,6 +163,9 @@ readDispatch(io::JiLIO) =
       true
     elseif dispatch == 'f'
       false
+    elseif dispatch == '|' # Block comment
+      readBlockComment(io)
+      readToken(io)
     elseif dispatch == 'S'
       readStructure()
     elseif dispatch == '(' # Vector
@@ -226,6 +229,25 @@ readComment(io::JiLIO) =
     while (!eof(io) && (ch = readChar(io)) != '\n') end
   end
 
+readBlockComment(io::JiLIO, count=1) =
+  while (count != 0)
+    eof(io) ?
+      error("Unexpected end of file while reading block comment") :
+      let ch = readChar(io)
+        if ch == '|' && !eof(io)
+          ch = readChar(io)
+          if ch == '#'
+            count -= 1
+          end
+        elseif ch == '#' && !eof(io)
+          ch = readChar(io)
+          if ch == '|'
+            count += 1
+          end
+        end
+      end
+    end
+
 const complex_rectangular_regex = r"[+-]?(((\d+\.\d*|\d*\.\d+|\d+)[+-])?((\d+\.\d*|\d*\.\d+|\d+)i|i(\d+\.\d*|\d*\.\d+|\d+)|i))"
 const complex_polar_regex = r"[+-]?((\d+\.\d*|\d*\.\d+|\d+)?e(\([+-]?|[+-]?\()((\d+\.\d*|\d*\.\d+|\d+)i|i(\d+\.\d*|\d*\.\d+|\d+)|i)\))"
 #const float_regex = r"^(([+-]?(?:\d*(?:\.(?=\d)?)?\d*))(?:(?:(?<=\d)[Ee])?((?2)))(?<=\d))?$"
@@ -269,11 +291,13 @@ readNumberOrSymbol(ch, io::JiLIO, base=10) =
             elseif !isnothing(match(float_regex, token))
               parse(Float64, token)
             elseif !isnothing(match(complex_rectangular_regex, token))
-              error("Must handle the complex number '$token'. See https://github.com/JuliaLang/julia/issues/22250")
+              #error("Must handle the complex number '$token'. See https://github.com/JuliaLang/julia/issues/22250")
+              Symbol(token)
             elseif !isnothing(match(complex_polar_regex, token))
-              error("Must handle the complex number '$token'. See https://github.com/JuliaLang/julia/issues/22250")
+              #error("Must handle the complex number '$token'. See https://github.com/JuliaLang/julia/issues/22250")
+              Symbol(token)
             else
-                Symbol(token)
+              Symbol(token)
             end
           else
             Symbol(token)
