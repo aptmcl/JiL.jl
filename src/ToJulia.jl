@@ -290,6 +290,14 @@ tojulia(::Val{:quasiquote}, (expr, ), scope) =
 tojulia(::Val{:(=)}, args, scope) =
   :(==($(tojulia_vector(args, scope)...)))
 
+# Syntax for vectors (useful in Julia macros)
+tojulia(::Val{:vect}, args, scope) =
+  Expr(:vect, tojulia_vector(args, scope)...)
+
+# Syntax for tuples (useful in Julia macros)
+tojulia(::Val{:tuple}, args, scope) =
+  Expr(:tuple, tojulia_vector(args, scope)...)
+
 # Parameters
 # Given that parameters might refer to the previous ones, this needs to incrementally extend the scope
 
@@ -701,6 +709,15 @@ tojulia(::Val{:and}, exprs, scope) =
   
 tojulia(::Val{:or}, exprs, scope) =
   Expr(:||, tojulia_vector(exprs, scope)...)
+
+# Iteration
+
+tojulia(::Val{:for}, ((name, seq), body), scope) =
+  let jname = tojulia_var(name, scope),
+      jseq = tojulia(seq, scope),
+      body_scope = new_local_scope([jname], [missing], scope)
+    :(for $jname in $jseq; $(tojulia(body, body_scope)) end)
+  end
 
 # Modules
 tojulia(::Val{:module}, (name, forms...), scope) =
