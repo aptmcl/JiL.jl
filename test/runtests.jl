@@ -493,8 +493,9 @@ using JiL: truncate, round, floor
                            (set! ,x ,y)
                            (set! ,y temp)))
                       (macro foo (a b)
-                        (swap a b)
-                        `(list ,a ,b))
+                        (begin 
+                          (swap a b)
+                          `(list ,a ,b)))
                       (foo 1 2))""" == jilEval"'(2 1)"
 
 end

@@ -506,9 +506,10 @@ tojulia(::Val{:macro}, (name, params, body), scope) =
     add_binding!(name, JiLMacro(macroname, scope, params, body), scope)
     #println("Lifting $newmacro to scope $scope")
     lift!(newmacro, scope)
-    scope isa ModuleScope ?
-      :($jname = $macroname) : # original name, to be used for exports
-      :nothing
+    if scope isa ModuleScope
+      lift!(:($jname = $macroname), scope)  # original name, to be used for exports
+    end
+    :nothing
   end
 
 #=
