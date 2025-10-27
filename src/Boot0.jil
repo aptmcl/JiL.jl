@@ -11,6 +11,7 @@
   procedure?
   string?
   symbol?
+  keyword?
   vector?
   list? pair? atom? symbol?
   null?
@@ -40,6 +41,7 @@
 (def (procedure? obj) (isa obj Function))
 (def (string? obj) (isa obj AbstractString))
 (def (symbol? obj) (isa obj Symbol))
+(def (keyword? obj) (isa obj Keyword))
 (def (vector? obj) (isa obj Vector))
 
 ;; Other predicates

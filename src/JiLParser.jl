@@ -163,6 +163,8 @@ readDispatch(io::JiLIO) =
       true
     elseif dispatch == 'f'
       false
+    elseif dispatch == ':'
+      read_keyword(io)
     elseif dispatch == '|' # Block comment
       readBlockComment(io)
       readToken(io)
@@ -229,6 +231,20 @@ readString(io::JiLIO) =
 readComment(io::JiLIO) =
   let ch
     while (!eof(io) && (ch = readChar(io)) != '\n') end
+  end
+
+read_keyword(io::JiLIO) =
+  let buffer = Char[],
+      ch = readChar(io)
+    while (true)
+      push!(buffer, ch)
+      ch = readChar(io)
+      if delimiterP(ch, io)
+        break
+      end
+    end
+    pushChar(ch, io)
+    Keyword(Symbol(String(buffer)))
   end
 
 readBlockComment(io::JiLIO, count=1) =

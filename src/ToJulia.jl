@@ -197,6 +197,14 @@ tojulia(form::Nil, scope) = form
 
 tojulia(form::Array, scope) = form
 
+export Keyword
+struct Keyword
+  sym::Symbol
+end
+
+Base.show(io::IO, k::Keyword) = print(io, "#:", k.sym)
+
+tojulia(form::Keyword, scope) = form
 #= 
 Due to the presence of symbol macros, We need to distinguish a symbol being assigned 
 from a symbol being evaluated. Only in latter should we attempt to expand symbol macros. 
