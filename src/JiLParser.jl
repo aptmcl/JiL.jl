@@ -166,6 +166,8 @@ readDispatch(io::JiLIO) =
     elseif dispatch == '|' # Block comment
       readBlockComment(io)
       readToken(io)
+    elseif dispatch == '{' # Extended symbol
+      readExtendedSymbol(io)
     elseif dispatch == 'S'
       readStructure()
     elseif dispatch == '(' # Vector
@@ -247,6 +249,25 @@ readBlockComment(io::JiLIO, count=1) =
         end
       end
     end
+
+
+readExtendedSymbol(io::JiLIO) =
+  let chars = Char[]
+    while (true)
+      eof(io) ?
+        error("Unexpected end of file while reading block comment") :
+        let ch = readChar(io)
+          if ch == '}' && !eof(io)
+            ch = readChar(io)
+            if ch == '#'
+              return Symbol(String(chars))
+            end
+          else
+            push!(chars, ch)
+          end
+        end
+    end
+  end
 
 const complex_rectangular_regex = r"[+-]?(((\d+\.\d*|\d*\.\d+|\d+)[+-])?((\d+\.\d*|\d*\.\d+|\d+)i|i(\d+\.\d*|\d*\.\d+|\d+)|i))"
 const complex_polar_regex = r"[+-]?((\d+\.\d*|\d*\.\d+|\d+)?e(\([+-]?|[+-]?\()((\d+\.\d*|\d*\.\d+|\d+)i|i(\d+\.\d*|\d*\.\d+|\d+)|i)\))"
